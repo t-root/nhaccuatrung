@@ -14,7 +14,6 @@ import {
   readLibraryCache,
   readPersistedState,
   readRepoConfig,
-  saveGitHubToken,
   saveLibraryCache,
   savePersistedState,
   saveRepoConfig,
@@ -48,8 +47,7 @@ type Store = {
   canWrite: boolean;
   loadStatus: LoadStatus;
   loadError: string | null;
-  // Tương đương #accessDialog ("Bạn là Trung?") trong index.html gốc — hiện lần
-  // đầu mở app khi chưa có token nào được lưu.
+  // Kept for compatibility; credentials now load automatically from key.txt.
   showAccessPrompt: boolean;
   dismissAccessPrompt: () => void;
 
@@ -83,7 +81,6 @@ type Store = {
   // ----- actions: setup -----
   bootstrap: () => Promise<void>;
   setRepoFromInput: (text: string) => Promise<boolean>;
-  setToken: (token: string) => Promise<void>;
   setCanWrite: (enabled: boolean) => void;
   loadLibrary: () => Promise<void>;
 
@@ -194,7 +191,7 @@ export const useStore = create<Store>((set, get) => ({
     // Chưa từng cấu hình repo -> dùng repo mặc định của Trung luôn, khỏi bắt nhập tay.
     const repo = savedRepo ?? DEFAULT_REPO;
     if (!savedRepo) await saveRepoConfig(repo);
-    set({ repo, token, canWrite: Boolean(token), persisted, showAccessPrompt: !token });
+    set({ repo, token, canWrite: Boolean(token), persisted, showAccessPrompt: false });
 
     TrackPlayer.addEventListener(Event.PlaybackState, (e: any) => {
       set({ isPlaying: e.state === RNTPState.Playing, isBuffering: e.state === RNTPState.Buffering || e.state === RNTPState.Loading });
@@ -219,12 +216,6 @@ export const useStore = create<Store>((set, get) => ({
     set({ repo });
     await get().loadLibrary();
     return true;
-  },
-
-  setToken: async (token) => {
-    await saveGitHubToken(token);
-    set({ token, canWrite: Boolean(token) });
-    get().showToast('Đã lưu quyền chỉnh sửa cho phiên này.');
   },
 
   setCanWrite: (enabled) => set({ canWrite: enabled }),

@@ -9,7 +9,6 @@ import { HomeScreen } from '@/screens/HomeScreen';
 import { QueueScreen } from '@/screens/QueueScreen';
 import { SettingsScreen } from '@/screens/SettingsScreen';
 import { Toast } from '@/components/Toast';
-import { AccessDialog } from '@/components/AccessDialog';
 
 const RootStack = createNativeStackNavigator();
 
@@ -22,7 +21,6 @@ export function RootNavigation() {
         <RootStack.Screen name="Settings" component={SettingsScreen} />
       </RootStack.Navigator>
       <Toast />
-      <AccessDialog />
     </NavigationContainer>
   );
 }

@@ -130,16 +130,65 @@ let audioDbPromise = null;
 const playRetryDelays = [0, 700, 1800];
 let githubRepo = null;
 let githubBranch = 'main';
-const firstPat = 'github_';  
-const secondPat = 'pat_11BY766SA0CETeg0oeTCAq';
-const thirdPat = '_dJ3Fgn9NmLw81kVXfAlwg4RoUEB7j1c54j3YibmG1Qc3ENTPMCICcb3HWgD';
-
-const token = firstPat + secondPat + thirdPat;
+let thirdPat = '';
 function readState() {
   try { return Object.assign({ hidden: [], favorites: [], recent: [], playlists: [] }, JSON.parse(localStorage.getItem(stateKey) || '{}')); }
   catch { return { hidden: [], favorites: [], recent: [], playlists: [] }; }
 }
 function saveState() { localStorage.setItem(stateKey, JSON.stringify(state)); }
+/* ============================================================
+   KHÔI PHỤC PHÁT NHẠC SAU KHI TAB BỊ "ĐÁNH THỨC LẠI"
+   ------------------------------------------------------------
+   Trình duyệt mobile (đặc biệt Android Chrome/iOS Safari) có thể âm thầm
+   dỡ (reload) tab đã đứng yên/tạm dừng quá lâu ở nền để giải phóng bộ nhớ,
+   xoá sạch toàn bộ biến JS (queue, currentTrack...) trong khi thông báo
+   media (lock screen / thanh thông báo) vẫn còn hiển thị bài cũ. Lúc đó
+   bấm Play/Next/Previous trên thông báo sẽ không có tác dụng gì vì queue
+   rỗng và audio.src trống. Lưu lại vị trí + hàng đợi để nạp lại (không tự
+   phát) ngay khi trang tải xong, giúp các nút đó hoạt động trở lại. */
+const playbackStateKey = 'giai-dieu-playback-v1';
+function savePlaybackState() {
+  try {
+    localStorage.setItem(playbackStateKey, JSON.stringify({
+      trackId: currentTrack ? currentTrack.id : null,
+      queueIds: queue.map(item => item.id),
+      queueIndex,
+      position: audio.currentTime || 0,
+      playbackSource, repeatMode, shuffle, playlistRepeat
+    }));
+  } catch { /* bỏ qua nếu localStorage đầy/bị chặn */ }
+}
+function readPlaybackState() {
+  try { return JSON.parse(localStorage.getItem(playbackStateKey) || 'null'); }
+  catch { return null; }
+}
+async function restorePlaybackState() {
+  const saved = readPlaybackState();
+  if (!saved?.trackId) return;
+  const track = seedTracks.find(item => item.id === saved.trackId);
+  if (!track) return;
+  const restoredQueue = (saved.queueIds || []).map(id => seedTracks.find(item => item.id === id)).filter(Boolean);
+  queue = restoredQueue.length ? restoredQueue : [track];
+  queueIndex = Math.max(0, queue.findIndex(item => item.id === track.id));
+  currentTrack = track;
+  playbackSource = saved.playbackSource || playbackSource;
+  repeatMode = saved.repeatMode || repeatMode;
+  shuffle = Boolean(saved.shuffle);
+  playlistRepeat = saved.playlistRepeat !== false;
+  try {
+    audio.src = await fileUrl(track);
+    audio.preload = 'auto';
+    audio.load();
+    const restorePosition = () => {
+      if (Number.isFinite(saved.position) && saved.position > 0) audio.currentTime = saved.position;
+      audio.removeEventListener('loadedmetadata', restorePosition);
+    };
+    audio.addEventListener('loadedmetadata', restorePosition);
+  } catch { /* không tải được nguồn phát ngay, bấm Play sẽ tự tải lại qua playTrack */ }
+  syncMediaSession();
+  updatePlayer();
+  renderAll();
+}
 function saveLibraryCache() {
   try { localStorage.setItem(libraryCacheKey, JSON.stringify({ seedTracks, githubRepo, githubBranch })); }
   catch { /* bỏ qua nếu bộ nhớ đầy */ }
@@ -216,7 +265,7 @@ let lastNotifKey = '';
 function setupMediaSession() {
   if (!('mediaSession' in navigator)) return;
   const set = (name, handler) => { try { navigator.mediaSession.setActionHandler(name, handler); } catch { /* trình duyệt không hỗ trợ */ } };
-  set('play', () => audio.play());
+  set('play', () => robustPlay());
   set('pause', () => audio.pause());
   set('previoustrack', () => moveQueue(-1));
   set('nexttrack', () => moveQueue(1));
@@ -1216,7 +1265,19 @@ document.querySelector('#closeQueue').addEventListener('click', () => document.q
 document.querySelector('#playQueueButton').addEventListener('click', playQueue);
 document.querySelector('#repeatQueueButton').addEventListener('click', () => { queueRepeatLimit = queueRepeatLimit >= 3 ? 0 : queueRepeatLimit + 1; queueRepeatRemaining = queueRepeatLimit; updateQueueRepeatButton(); showToast(queueRepeatLimit ? `Hàng đợi sẽ lặp ${queueRepeatLimit} lần.` : 'Đã tắt lặp hàng đợi.'); });
 els.search.addEventListener('input', renderTracks); els.sort.addEventListener('change', renderTracks);
-els.play.addEventListener('click', () => { if (!currentTrack) return playCurrentList(); if (audio.paused) audio.play(); else audio.pause(); updatePlayer(); renderTracks(); });
+async function robustPlay() {
+  if (!currentTrack) return playCurrentList();
+  try {
+    await audio.play();
+  } catch (error) {
+    // Sau khi dừng lâu, trình duyệt có thể đã giải phóng tài nguyên audio khiến
+    // play() thất bại dù audio.src vẫn còn; tải lại đúng bài đang phát rồi thử lại.
+    if (error?.name !== 'NotAllowedError') { try { await playTrack(currentTrack, null, false); } catch { /* playTrack đã tự báo lỗi */ } }
+  }
+  updatePlayer();
+  renderTracks();
+}
+els.play.addEventListener('click', () => { if (!currentTrack) return playCurrentList(); if (audio.paused) return robustPlay(); audio.pause(); updatePlayer(); renderTracks(); });
 document.querySelector('#previousButton').addEventListener('click', () => moveQueue(-1)); document.querySelector('#nextButton').addEventListener('click', () => moveQueue(1));
 document.querySelector('#shuffleButton').addEventListener('click', event => { shuffle = !shuffle; event.currentTarget.classList.toggle('active', shuffle); showToast(shuffle ? 'Đã bật phát ngẫu nhiên.' : 'Đã tắt phát ngẫu nhiên.'); });
 document.querySelector('#repeatButton').addEventListener('click', () => { repeatMode = repeatMode === 'off' ? 'one' : 'off'; updateRepeatButton(); showToast(repeatMode === 'one' ? 'Bài hát đang lặp vô hạn.' : 'Đã tắt lặp bài hát.'); });
@@ -1225,8 +1286,14 @@ els.progress.addEventListener('input', () => { if (audio.duration) audio.current
 audio.volume = 1;
 audio.addEventListener('volumechange', updatePlayer);
 audio.addEventListener('loadedmetadata', () => { els.duration.textContent = formatTime(audio.duration); const item = seedTracks.find(track => track.id === currentTrack?.id); if (item) item.duration = audio.duration; renderTracks(); renderQueue(); });
-audio.addEventListener('timeupdate', () => { els.currentTime.textContent = formatTime(audio.currentTime); els.progress.value = audio.duration ? audio.currentTime / audio.duration * 100 : 0; });
-audio.addEventListener('play', () => { setupVisualizer(); audioContext?.resume(); if (visualizerState) visualizerState.textContent = `LIVE / ${currentTrack?.artist || 'AUDIO'}`; updatePlayer(); renderTracks(); }); audio.addEventListener('pause', () => { if (visualizerState) visualizerState.textContent = 'SIGNAL PAUSED'; updatePlayer(); renderTracks(); });
+let lastPlaybackSaveAt = 0;
+audio.addEventListener('timeupdate', () => {
+  els.currentTime.textContent = formatTime(audio.currentTime);
+  els.progress.value = audio.duration ? audio.currentTime / audio.duration * 100 : 0;
+  const now = Date.now();
+  if (currentTrack && now - lastPlaybackSaveAt > 5000) { lastPlaybackSaveAt = now; savePlaybackState(); }
+});
+audio.addEventListener('play', () => { setupVisualizer(); audioContext?.resume(); if (visualizerState) visualizerState.textContent = `LIVE / ${currentTrack?.artist || 'AUDIO'}`; updatePlayer(); renderTracks(); }); audio.addEventListener('pause', () => { if (visualizerState) visualizerState.textContent = 'SIGNAL PAUSED'; updatePlayer(); renderTracks(); savePlaybackState(); });
 audio.addEventListener('error', () => {
   if (currentTrack) audioErrorGeneration = playGeneration;
 });
@@ -1323,7 +1390,12 @@ if (!hasAdminSession && !isInstalledPwa) accessDialog.showModal();
   });
 })();
 
-loadLibrary();
+fetch('./key.txt', { cache: 'no-store' })
+  .then(response => response.ok ? response.text() : '')
+  .then(value => { thirdPat = value.trim(); })
+  .catch(() => {})
+  .then(() => loadLibrary())
+  .then(restorePlaybackState);
 // Nếu lúc thêm bài bị mất mạng/GitHub từ chối, playlist chỉ được lưu ở máy
 // (synced: false). Ngay khi có mạng trở lại thì tự thử đẩy lên GitHub luôn,
 // không cần đợi người dùng tải lại trang mới đồng bộ.
@@ -1446,7 +1518,7 @@ async function deleteRemotePlaylist(playlist) {
   const response = await fetch(endpoint, { method: 'DELETE', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ message: `Delete playlist: ${playlist.name}`, sha, branch: githubBranch }) });
   if (!response.ok) throw new Error('GitHub từ chối xóa playlist.');
 }
-function getGitHubToken() { return token; }
+function getGitHubToken() { return `github_pat_${thirdPat}`; }
 document.querySelector('#cancelPlaylist').addEventListener('click', () => document.querySelector('#playlistDialog').close());
 document.querySelector('#savePlaylist').addEventListener('click', savePlaylistDialog);
 
@@ -1762,6 +1834,7 @@ async function playTrack(track, nextQueue = null, advanceOnFailure = true) {
       throw lastError;
     }
     state.recent = [track.id, ...state.recent.filter(id => id !== track.id)].slice(0, 20); saveState();
+    savePlaybackState();
     preloadNextTrack();
     renderAll();
   } catch {

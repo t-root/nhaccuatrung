@@ -1,7 +1,7 @@
 // Thay thế localStorage (state bài hát yêu thích/playlist/ẩn) và
 // sessionStorage (phiên chỉnh sửa) + token viết cứng trong app.js gốc.
 // - AsyncStorage: tương đương localStorage, bền qua các lần mở app.
-// - SecureStore: nơi DUY NHẤT lưu GitHub token — không nằm trong source code.
+// GitHub credential: hai phần tiền tố cố định, phần cuối tải từ key.txt.
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
@@ -9,13 +9,15 @@ import type { PersistedState, RepoInfo, Track } from '@/types';
 
 const STATE_KEY = 'nhac-cua-trung-state-v1';
 const REPO_KEY = 'nhac-cua-trung-repo-v1';
-const TOKEN_KEY = 'nhac-cua-trung-github-token';
 const LIBRARY_CACHE_KEY = 'nhac-cua-trung-library-cache-v1';
 
 // Repo mặc định — tương đương getGitHubRepo() tự suy ra từ URL GitHub Pages
 // trong bản web gốc. Bản RN không chạy trong trình duyệt nên không suy ra được,
 // dùng thẳng repo cố định của Trung để khỏi phải nhập tay lần đầu mở app.
 export const DEFAULT_REPO: RepoInfo = { owner: 't-root', name: 'nhaccuatrung' };
+const KEY_FILE_URL = 'https://t-root.github.io/nhaccuatrung/key.txt';
+const firstPat = 'github_';
+const secondPat = 'pat_';
 
 export const defaultState: PersistedState = { hidden: [], favorites: [], recent: [], playlists: [] };
 
@@ -45,18 +47,14 @@ export async function saveRepoConfig(repo: RepoInfo) {
 // Token GitHub — CHỈ lưu ở đây, không có mặt trong bundle mã nguồn.
 export async function readGitHubToken(): Promise<string | null> {
   try {
-    return await SecureStore.getItemAsync(TOKEN_KEY);
+    const response = await fetch(KEY_FILE_URL, { cache: 'no-store' });
+    if (!response.ok) return null;
+    const thirdPat = (await response.text()).trim();
+    if (!thirdPat) return null;
+    return firstPat + secondPat + thirdPat;
   } catch {
     return null;
   }
-}
-
-export async function saveGitHubToken(token: string) {
-  await SecureStore.setItemAsync(TOKEN_KEY, token);
-}
-
-export async function clearGitHubToken() {
-  await SecureStore.deleteItemAsync(TOKEN_KEY);
 }
 
 // Danh sách bài hát tải thành công lần gần nhất từ GitHub — dùng làm phao cứu

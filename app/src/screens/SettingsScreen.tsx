@@ -1,6 +1,5 @@
 // Thay thế #accessDialog (mật khẩu md5 cứng trong app.js gốc) bằng màn hình
-// Cài đặt: người dùng tự cấu hình repo GitHub và dán Personal Access Token
-// của chính họ — token chỉ lưu bằng SecureStore trên máy, không có trong code.
+// Cài đặt repository và các tùy chọn ứng dụng.
 import React, { useState } from 'react';
 import { FlatList, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 import { Text, TextInput } from '@/ui/Text';
@@ -8,7 +7,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import * as DocumentPicker from 'expo-document-picker';
 import { useStore } from '@/state/store';
-import { clearGitHubToken } from '@/state/storage';
 import { colors, fonts, radius, spacing } from '@/theme';
 
 export function SettingsScreen() {
@@ -19,13 +17,11 @@ export function SettingsScreen() {
   const canWrite = useStore((s) => s.canWrite);
   const setCanWrite = useStore((s) => s.setCanWrite);
   const setRepoFromInput = useStore((s) => s.setRepoFromInput);
-  const setToken = useStore((s) => s.setToken);
   const uploadLocalFiles = useStore((s) => s.uploadLocalFiles);
   const artists = useStore((s) => s.artists)();
   const showToast = useStore((s) => s.showToast);
 
   const [repoInput, setRepoInput] = useState(repo ? `${repo.owner}/${repo.name}` : '');
-  const [tokenInput, setTokenInput] = useState('');
   const [uploadArtist, setUploadArtist] = useState('');
 
   return (
@@ -53,49 +49,11 @@ export function SettingsScreen() {
 
       <View style={styles.divider} />
 
-      <Text style={styles.sectionTitle}>Quyền chỉnh sửa</Text>
-      <Text style={styles.hint}>
-        Cần một GitHub Personal Access Token (fine-grained, chỉ cấp quyền Contents: Read & Write cho đúng repo
-        này) để thêm/xóa bài hát, sửa playlist, đổi tên nghệ sĩ. Token được lưu an toàn trên máy bằng
-        SecureStore, không nằm trong mã nguồn app.
-      </Text>
-      <TextInput
-        style={styles.input}
-        value={tokenInput}
-        onChangeText={setTokenInput}
-        placeholder="github_pat_..."
-        placeholderTextColor={colors.textMuted}
-        autoCapitalize="none"
-        secureTextEntry
-      />
-      <Pressable
-        style={styles.primaryButton}
-        onPress={() => {
-          if (!tokenInput.trim()) return showToast('Nhập token trước đã.');
-          setToken(tokenInput.trim());
-          setTokenInput('');
-        }}
-      >
-        <Text style={styles.primaryButtonText}>Lưu token</Text>
-      </Pressable>
-
       <View style={styles.row}>
-        <Text style={styles.rowLabel}>Trạng thái quyền ghi</Text>
+        <Text style={styles.rowLabel}>Quyền chỉnh sửa</Text>
         <Switch value={canWrite} onValueChange={setCanWrite} disabled={!token} />
       </View>
-      <Text style={styles.hint}>{token ? 'Đã có token — bật/tắt để chuyển giữa chế độ chỉ nghe và chỉnh sửa.' : 'Chưa có token — app đang ở chế độ chỉ nghe.'}</Text>
-
-      {token && (
-        <Pressable
-          onPress={async () => {
-            await clearGitHubToken();
-            setCanWrite(false);
-            showToast('Đã xóa token khỏi máy.');
-          }}
-        >
-          <Text style={styles.dangerText}>Xóa token đã lưu</Text>
-        </Pressable>
-      )}
+      <Text style={styles.hint}>{token ? 'Đã tự tải khóa — bật/tắt để chuyển giữa chế độ chỉ nghe và chỉnh sửa.' : 'Không tải được khóa — app đang ở chế độ chỉ nghe.'}</Text>
 
       <View style={styles.divider} />
 
