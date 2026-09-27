@@ -344,7 +344,7 @@ export const useStore = create<Store>((set, get) => ({
         url: uri,
         title: track.title,
         artist: track.artist,
-        artwork: undefined,
+        artwork: require('../../assets/icon.png'),
       });
       await TrackPlayer.play();
 
