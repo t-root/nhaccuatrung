@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111827">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="logo.png" type="image/png">
+  <title>Nhạc Của Trung</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">♫</span><span>Nhạc Của Trung</span></div>
+      <nav class="main-nav" aria-label="Điều hướng chính">
+        <button class="nav-item active" data-view="all"><span>⌂</span> Tất cả bài hát</button>
+        <button class="nav-item" data-view="recent"><span>◷</span> Nghe gần đây</button>
+        <button class="nav-item" data-view="favorites"><span>♡</span> Yêu thích</button>
+      </nav>
+      <div class="sidebar-section" data-section="artists">
+        <div class="section-heading section-toggle-row">
+          <button type="button" class="section-toggle" data-toggle="artists" aria-expanded="true">
+            <span class="section-toggle-label"><span class="section-chevron">▾</span> ARTISTS</span>
+          </button>
+          <button id="createArtist" class="icon-button" title="Tạo nghệ sĩ" type="button">+</button>
+        </div>
+        <div id="artistList" class="playlist-list section-body"></div>
+      </div>
+      <div class="sidebar-section playlist-section" data-section="playlists">
+        <div class="section-heading section-toggle-row">
+          <button type="button" class="section-toggle" data-toggle="playlists" aria-expanded="true">
+            <span class="section-toggle-label"><span class="section-chevron">▾</span> PLAYLISTS</span>
+          </button>
+          <button id="createPlaylist" class="icon-button" title="Tạo playlist">+</button>
+        </div>
+        <div id="playlistList" class="playlist-list section-body"></div>
+      </div>
+      <div class="sidebar-footer">
+        <div class="upload-actions">
+          <label class="upload-button" for="fileInput" title="Tải file nhạc"><span class="upload-icon upload-icon-file">♪</span> Tải file nhạc</label>
+          <button id="folderUploadButton" class="upload-button" type="button" title="Tải thư mục"><span class="upload-icon upload-icon-folder">▣</span> Tải thư mục</button>
+        </div>
+        <input id="fileInput" type="file" multiple accept="audio/*,.mp3,.wav,.m4a,.ogg,.flac,.aac">
+        <input id="artistFileInput" type="file" multiple accept="audio/*,.mp3,.wav,.m4a,.ogg,.flac,.aac">
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar">
+        <div class="breadcrumbs"><strong id="pageTitle">Tất cả bài hát</strong></div>
+        <div class="top-actions">
+          <label class="search-box"><span>⌕</span><input id="searchInput" type="search" placeholder="Tìm bài hát, nghệ sĩ..." aria-label="Tìm kiếm"></label>
+          <button id="themeColorButton" class="round-button color-button" title="Đổi màu chủ đạo" type="button">#</button>
+          <button id="queueButton" class="round-button" title="Hàng đợi">≡</button>
+        </div>
+      </header>
+
+      <section class="hero">
+        <div class="hero-art visualizer-shell">
+          <canvas id="audioVisualizer" aria-label="Phổ âm thanh realtime"></canvas>
+          <div class="visualizer-hud"><span><i class="signal-dot"></i> LIVE SPECTRUM</span><strong id="visualizerState">NO SIGNAL</strong></div>
+        </div>
+      </section>
+
+      <div class="player-bar" id="playerBar">
+        <div class="now-playing"><div id="playerArtwork" class="mini-art">♫</div><div class="now-copy"><strong id="nowTitle">Chưa chọn bài hát</strong><span id="nowArtist">Chọn một bài để bắt đầu</span></div><button id="favoriteButton" class="heart-button" title="Yêu thích">♡</button></div>
+        <div class="player-center"><div class="player-controls"><button id="shuffleButton" class="control-button" title="Phát ngẫu nhiên">⤨</button><button id="previousButton" class="control-button" title="Bài trước">|◀</button><button id="playButton" class="play-button" title="Phát / dừng">▶</button><button id="nextButton" class="control-button" title="Bài tiếp">▶|</button><button id="repeatButton" class="control-button" title="Lặp lại">↻</button><button id="speedButton" class="control-button speed-button" title="Tốc độ phát: 1x (bấm để đổi)">1x</button></div><div class="progress-row"><span id="currentTime">0:00</span><input id="progress" type="range" min="0" max="100" value="0" aria-label="Tiến trình"><span id="duration">0:00</span></div></div>
+      </div>
+
+      <section class="content-section">
+        <div class="section-toolbar"><div><h2 id="sectionTitle">Tất cả bài hát</h2></div><div class="collection-actions"><button id="playAllButton" class="primary-button" type="button"><span>▶</span> Phát tất cả</button><button id="shuffleAllButton" class="secondary-button" type="button"><span>⤨</span> Phát ngẫu nhiên</button><button id="repeatPlaylistButton" class="secondary-button" type="button" hidden>↻ Lặp playlist</button><button id="addTracksButton" class="secondary-button" type="button" hidden><span>+</span> Thêm bài hát</button><button id="renameCurrentCollectionButton" class="secondary-button collection-manage-button" type="button" hidden><span>✎</span> Đổi tên</button><button id="clearCurrentCollectionButton" class="secondary-button collection-manage-button clear-collection-button" type="button" hidden><span>×</span> Xóa</button><label class="sort-select"><span>Sắp xếp:</span><select id="sortSelect"><option value="recent">Mới thêm</option><option value="title">Tên bài hát</option><option value="artist">Nghệ sĩ</option></select></label></div></div>
+        <div id="stats" class="stats-line"></div>
+        <div id="trackList" class="track-list" aria-live="polite"></div>
+        <div id="emptyState" class="empty-state" hidden><div class="empty-icon">♫</div><h3>Chưa có bài hát phù hợp</h3><p>Thử đổi từ khóa hoặc tải lên một thư mục nhạc.</p></div>
+      </section>
+    </main>
+
+    <aside id="queuePanel" class="queue-panel" aria-label="Hàng đợi phát">
+      <div class="queue-header"><div><p class="eyebrow">UP NEXT</p><h2>Hàng đợi</h2><span id="queueTotal" class="queue-total">0:00</span></div><div class="queue-header-actions"><button id="playQueueButton" class="icon-button" title="Phát hàng đợi">▶</button><button id="repeatQueueButton" class="icon-button" title="Không lặp hàng đợi">↻</button><button id="closeQueue" class="icon-button" title="Đóng hàng đợi">×</button></div></div>
+      <div id="queueList" class="queue-list"></div>
+    </aside>
+  </div>
+
+  <audio id="audio"></audio>
+  <div id="toast" class="toast" role="status"></div>
+  <dialog id="accessDialog" class="access-dialog">
+    <div class="access-card">
+      <p class="eyebrow">PRIVATE SESSION</p>
+      <h2>Bạn là Trung?</h2>
+      <div id="accessQuestion" class="access-actions">
+        <button id="accessNo" class="secondary-button" type="button">No</button>
+        <button id="accessYes" class="primary-button" type="button">Yes</button>
+      </div>
+      <div id="accessPassword" hidden>
+        <label class="access-label" for="accessPass">Mật khẩu</label>
+        <input id="accessPass" class="access-input" type="password" inputmode="numeric" maxlength="4" autocomplete="off">
+        <button id="accessUnlock" class="primary-button" type="button">Mở quyền chỉnh sửa</button>
+        <p id="accessError" class="access-error" role="alert"></p>
+      </div>
+    </div>
+  </dialog>
+  <dialog id="uploadDialog" class="access-dialog upload-dialog">
+    <div class="access-card">
+      <p class="eyebrow">UPLOAD TARGET</p>
+      <h2>Chọn nghệ sĩ</h2>
+      <label class="access-label" for="uploadFolderSelect">Đưa bài hát vào nghệ sĩ hiện có</label>
+      <select id="uploadFolderSelect" class="access-input upload-folder-select"></select>
+      <div class="access-actions upload-dialog-actions">
+        <button id="cancelUpload" class="secondary-button" type="button">Hủy</button>
+        <button id="confirmUpload" class="primary-button" type="button">Tiếp tục</button>
+      </div>
+    </div>
+  </dialog>
+  <dialog id="playlistDialog" class="access-dialog playlist-dialog">
+    <div class="access-card">
+      <p class="eyebrow">PLAYLIST</p>
+      <h2 id="playlistDialogTitle">Tạo playlist</h2>
+      <div id="playlistCreateFields">
+        <div id="playlistSourceSwitch" class="playlist-source-switch" hidden>
+          <button type="button" class="secondary-button active" data-playlist-source="manual">Đặt tên tự do</button>
+          <button type="button" class="secondary-button" data-playlist-source="artists">Từ nghệ sĩ</button>
+        </div>
+        <div id="playlistNameFields">
+          <label class="access-label" for="playlistNameInput">Tên playlist</label>
+          <input id="playlistNameInput" class="access-input" type="text" maxlength="80" autocomplete="off">
+        </div>
+        <div id="playlistArtistFields" hidden>
+          <span class="access-label">Chọn từ 2 nghệ sĩ trở lên</span>
+          <div id="playlistArtistList" class="add-track-list"></div>
+          <p id="playlistArtistPreview" class="playlist-artist-preview"></p>
+        </div>
+      </div>
+      <div id="playlistSelectFields" hidden>
+        <label class="access-label" for="playlistSelect">Chọn playlist</label>
+        <select id="playlistSelect" class="access-input upload-folder-select"></select>
+        <button id="createPlaylistFromAdd" class="secondary-button playlist-create-inline" type="button">+ Tạo playlist mới</button>
+      </div>
+      <div class="access-actions upload-dialog-actions">
+        <button id="cancelPlaylist" class="secondary-button" type="button">Hủy</button>
+        <button id="savePlaylist" class="primary-button" type="button">Lưu</button>
+      </div>
+    </div>
+  </dialog>
+  <dialog id="artistDialog" class="access-dialog artist-dialog">
+    <div class="access-card">
+      <p class="eyebrow">ARTIST DIRECTORY</p>
+      <h2>Đổi tên nghệ sĩ</h2>
+      <label class="access-label" for="artistNameInput">Tên mới</label>
+      <input id="artistNameInput" class="access-input" type="text" maxlength="80" autocomplete="off">
+      <div class="access-actions upload-dialog-actions">
+        <button id="cancelArtist" class="secondary-button" type="button">Hủy</button>
+        <button id="saveArtist" class="primary-button" type="button">Đổi tên</button>
+      </div>
+    </div>
+  </dialog>
+  <dialog id="themeColorDialog" class="access-dialog theme-color-dialog">
+    <div class="access-card">
+      <p class="eyebrow">THEME COLOR</p>
+      <h2>Màu chủ đạo</h2>
+      <label class="access-label" for="themeColorInput">Nhập mã màu HEX</label>
+      <input id="themeColorInput" class="access-input theme-color-input" type="text" inputmode="text" maxlength="7" placeholder="#8ef0d1" autocomplete="off">
+      <div class="access-actions upload-dialog-actions">
+        <button id="resetThemeColor" class="secondary-button" type="button">Màu mặc định</button>
+        <button id="cancelThemeColor" class="secondary-button" type="button">Hủy</button>
+        <button id="saveThemeColor" class="primary-button" type="button">Áp dụng</button>
+      </div>
+    </div>
+  </dialog>
+  <dialog id="createArtistDialog" class="access-dialog artist-dialog">
+    <div class="access-card">
+      <p class="eyebrow">ARTIST DIRECTORY</p>
+      <h2>Tạo nghệ sĩ</h2>
+      <label class="access-label" for="createArtistNameInput">Tên nghệ sĩ</label>
+      <input id="createArtistNameInput" class="access-input" type="text" maxlength="80" autocomplete="off">
+      <div class="access-actions upload-dialog-actions">
+        <button id="cancelCreateArtist" class="secondary-button" type="button">Hủy</button>
+        <button id="saveCreateArtist" class="primary-button" type="button">Chọn bài hát</button>
+      </div>
+    </div>
+  </dialog>
+  <dialog id="confirmDialog" class="access-dialog confirm-dialog">
+    <div class="access-card">
+      <p class="eyebrow">CONFIRM ACTION</p>
+      <h2 id="confirmDialogTitle">Xác nhận</h2>
+      <p id="confirmDialogMessage" class="confirm-dialog-message"></p>
+      <div class="access-actions upload-dialog-actions">
+        <button id="cancelConfirm" class="secondary-button" type="button">Hủy</button>
+        <button id="acceptConfirm" class="primary-button" type="button">Xác nhận</button>
+      </div>
+    </div>
+  </dialog>
+  <dialog id="addTracksDialog" class="access-dialog add-tracks-dialog">
+    <div class="access-card">
+      <p class="eyebrow">PLAYLIST TRACKS</p>
+      <h2>Thêm bài hát</h2>
+      <div class="track-filter-bar">
+        <label class="access-label" for="addTrackFilter">Hiển thị</label>
+        <select id="addTrackFilter" class="access-input upload-folder-select">
+          <option value="all">Tất cả bài hát</option>
+          <option value="artist">Theo nghệ sĩ</option>
+          <option value="recent">Gần đây</option>
+          <option value="favorites">Yêu thích</option>
+        </select>
+        <select id="addTrackArtist" class="access-input upload-folder-select" hidden></select>
+      </div>
+      <div id="addTrackList" class="add-track-list"></div>
+      <div class="access-actions upload-dialog-actions">
+        <button id="cancelAddTracks" class="secondary-button" type="button">Hủy</button>
+        <button id="saveAddTracks" class="primary-button" type="button">Thêm đã chọn</button>
+      </div>
+    </div>
+  </dialog>
+  <script src="app.js?v=20260925-1"></script>
+  <script>
+  /* Replace native select popups with themed listboxes while keeping the original fields for app logic. */
+  (function setupThemedSelects() {
+    var instances = [];
+
+    function closeAll(except) {
+      instances.forEach(function (instance) {
+        if (instance !== except) instance.close();
+      });
+    }
+
+    function setup(select) {
+      var wrapper = document.createElement('div');
+      var trigger = document.createElement('button');
+      var menu = document.createElement('div');
+      var instance = { close: close };
+
+      wrapper.className = 'theme-select';
+      trigger.type = 'button';
+      trigger.className = 'theme-select-trigger';
+      trigger.setAttribute('aria-haspopup', 'listbox');
+      menu.className = 'theme-select-menu';
+      menu.setAttribute('role', 'listbox');
+      wrapper.append(trigger, menu);
+      select.parentNode.insertBefore(wrapper, select);
+      wrapper.append(select);
+      select.classList.add('theme-select-native');
+      instances.push(instance);
+
+      function close() {
+        wrapper.classList.remove('is-open');
+        trigger.setAttribute('aria-expanded', 'false');
+      }
+
+      function sync() {
+        var selected = Array.from(select.options).find(function (option) {
+          return option.value === select.value;
+        }) || select.options[0];
+        trigger.textContent = selected ? selected.textContent : '';
+        trigger.disabled = select.disabled || !select.options.length;
+        wrapper.hidden = select.hidden;
+        menu.innerHTML = '';
+        Array.from(select.options).forEach(function (option) {
+          var item = document.createElement('button');
+          item.type = 'button';
+          item.className = 'theme-select-option';
+          item.setAttribute('role', 'option');
+          item.textContent = option.textContent;
+          item.setAttribute('aria-selected', String(option.value === select.value));
+          item.disabled = option.disabled;
+          item.addEventListener('click', function () {
+            select.value = option.value;
+            select.dispatchEvent(new Event('change', { bubbles: true }));
+            sync();
+            close();
+          });
+          menu.append(item);
+        });
+      }
+
+      trigger.addEventListener('click', function () {
+        if (trigger.disabled) return;
+        sync();
+        var open = !wrapper.classList.contains('is-open');
+        closeAll(instance);
+        wrapper.classList.toggle('is-open', open);
+        trigger.setAttribute('aria-expanded', String(open));
+      });
+      trigger.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') close();
+      });
+      select.addEventListener('change', sync);
+      new MutationObserver(sync).observe(select, { childList: true, subtree: true, attributes: true });
+      sync();
+    }
+
+    document.querySelectorAll('select').forEach(setup);
+    document.addEventListener('click', function (event) {
+      if (!event.target.closest('.theme-select')) closeAll(null);
+    });
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape') closeAll(null);
+    });
+  })();
+  </script>
+  <script>
+  /* Mobile: đưa thanh tìm kiếm + nút hàng đợi lên ngay dưới tiêu đề (trên menu "Tất cả bài hát").
+     Đặt riêng ngoài app.js để không bị lỗi khác làm hỏng. */
+  (function setupMobileSearchPosition() {
+    var topbar = document.querySelector('.topbar');
+    var brand = document.querySelector('.sidebar .brand');
+    var main = document.querySelector('.main-content');
+    if (!topbar || !brand || !main) return;
+    var mq = window.matchMedia('(max-width: 640px)');
+    function place() {
+      if (mq.matches) {
+        if (topbar.parentElement !== brand.parentElement || topbar.previousElementSibling !== brand) {
+          brand.insertAdjacentElement('afterend', topbar);
+        }
+      } else if (topbar.parentElement !== main || main.firstElementChild !== topbar) {
+        main.prepend(topbar);
+      }
+    }
+    place();
+    if (mq.addEventListener) mq.addEventListener('change', place);
+    else if (mq.addListener) mq.addListener(place);
+  })();
+  </script>
+</body>
+</html>
