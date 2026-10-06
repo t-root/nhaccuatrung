@@ -22,6 +22,7 @@ export function TrackRow({
   onQueue,
   onAddToPlaylist,
   onRemove,
+  reorder,
 }: {
   track: Track;
   index: number;
@@ -34,9 +35,11 @@ export function TrackRow({
   onQueue: () => void;
   onAddToPlaylist: () => void;
   onRemove: () => void;
+  // Đang ở chế độ sắp xếp: hàng không phát nhạc, chỉ có nút đổi vị trí.
+  reorder?: { first: boolean; last: boolean; onMove: (how: 'up' | 'down' | 'top') => void };
 }) {
   return (
-    <Pressable style={[styles.row, isCurrent && styles.rowActive]} onPress={onPlay}>
+    <Pressable style={[styles.row, isCurrent && styles.rowActive]} onPress={reorder ? undefined : onPlay}>
       <View style={styles.topRow}>
         <Text style={[styles.index, isCurrent && styles.indexActive]}>{isCurrent && isPlaying ? '♫' : String(index + 1).padStart(2, '0')}</Text>
         <View style={styles.art}>
@@ -48,6 +51,21 @@ export function TrackRow({
         </View>
         <Text style={styles.duration}>{track.duration ? formatTime(track.duration) : '--:--'}</Text>
       </View>
+      {reorder ? (
+        <View style={styles.actions}>
+          {([['top', '⤒', reorder.first], ['up', '▲', reorder.first], ['down', '▼', reorder.last]] as const).map(([how, glyph, disabled]) => (
+            <Pressable
+              key={how}
+              hitSlop={8}
+              disabled={disabled}
+              style={[styles.actionButton, disabled && styles.actionDisabled]}
+              onPress={() => reorder.onMove(how)}
+            >
+              <Text style={styles.icon}>{glyph}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : (
       <View style={styles.actions}>
         <Pressable hitSlop={8} style={styles.actionButton} onPress={onFavorite}>
           <Text style={[styles.icon, liked && styles.iconActive]}>{liked ? '♥' : '♡'}</Text>
@@ -63,6 +81,7 @@ export function TrackRow({
           <Text style={[styles.icon, styles.iconDanger]}>{inPlaylistView ? '−' : '×'}</Text>
         </Pressable>
       </View>
+      )}
     </Pressable>
   );
 }
@@ -102,6 +121,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
+  actionDisabled: { opacity: 0.25 },
   icon: { color: colors.textMuted, fontSize: 14 },
   iconActive: { color: colors.accent },
   iconDanger: { color: colors.textMuted },

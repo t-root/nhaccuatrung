@@ -67,11 +67,11 @@
 
       <div class="player-bar" id="playerBar">
         <div class="now-playing"><div id="playerArtwork" class="mini-art">♫</div><div class="now-copy"><strong id="nowTitle">Chưa chọn bài hát</strong><span id="nowArtist">Chọn một bài để bắt đầu</span></div><button id="favoriteButton" class="heart-button" title="Yêu thích">♡</button></div>
-        <div class="player-center"><div class="player-controls"><button id="shuffleButton" class="control-button" title="Phát ngẫu nhiên">⤨</button><button id="previousButton" class="control-button" title="Bài trước">|◀</button><button id="playButton" class="play-button" title="Phát / dừng">▶</button><button id="nextButton" class="control-button" title="Bài tiếp">▶|</button><button id="repeatButton" class="control-button" title="Lặp lại">↻</button><button id="speedButton" class="control-button speed-button" title="Tốc độ phát: 1x (bấm để đổi)">1x</button></div><div class="progress-row"><span id="currentTime">0:00</span><input id="progress" type="range" min="0" max="100" value="0" aria-label="Tiến trình"><span id="duration">0:00</span></div></div>
+        <div class="player-center"><div class="player-controls"><span id="shuffleButton" class="control-button shuffle-indicator" role="img" aria-label="Phát ngẫu nhiên: tắt" title="Đang phát theo thứ tự">⤨</span><button id="previousButton" class="control-button" title="Bài trước">|◀</button><button id="playButton" class="play-button" title="Phát / dừng">▶</button><button id="nextButton" class="control-button" title="Bài tiếp">▶|</button><button id="repeatButton" class="control-button" title="Lặp lại">↻</button><button id="speedButton" class="control-button speed-button" title="Tốc độ phát: 1x (bấm để đổi)">1x</button></div><div class="progress-row"><span id="currentTime">0:00</span><input id="progress" type="range" min="0" max="100" value="0" aria-label="Tiến trình"><span id="duration">0:00</span></div></div>
       </div>
 
       <section class="content-section">
-        <div class="section-toolbar"><div><h2 id="sectionTitle">Tất cả bài hát</h2></div><div class="collection-actions"><button id="playAllButton" class="primary-button" type="button"><span>▶</span> Phát tất cả</button><button id="shuffleAllButton" class="secondary-button" type="button"><span>⤨</span> Phát ngẫu nhiên</button><button id="repeatPlaylistButton" class="secondary-button" type="button" hidden>↻ Lặp playlist</button><button id="addTracksButton" class="secondary-button" type="button" hidden><span>+</span> Thêm bài hát</button><button id="renameCurrentCollectionButton" class="secondary-button collection-manage-button" type="button" hidden><span>✎</span> Đổi tên</button><button id="clearCurrentCollectionButton" class="secondary-button collection-manage-button clear-collection-button" type="button" hidden><span>×</span> Xóa</button><label class="sort-select"><span>Sắp xếp:</span><select id="sortSelect"><option value="recent">Mới thêm</option><option value="title">Tên bài hát</option><option value="artist">Nghệ sĩ</option></select></label></div></div>
+        <div class="section-toolbar"><div><h2 id="sectionTitle">Tất cả bài hát</h2></div><div class="collection-actions"><button id="playAllButton" class="primary-button" type="button"><span>▶</span> Phát tất cả</button><button id="shuffleAllButton" class="secondary-button" type="button"><span>⤨</span> Phát ngẫu nhiên</button><button id="repeatPlaylistButton" class="secondary-button" type="button" hidden>↻ Lặp playlist</button><button id="addTracksButton" class="secondary-button" type="button" hidden><span>+</span> Thêm bài hát</button><button id="renameCurrentCollectionButton" class="secondary-button collection-manage-button" type="button" hidden><span>✎</span> Đổi tên</button><button id="reorderButton" class="secondary-button collection-manage-button" type="button" hidden><span>⇅</span> Sắp xếp</button><button id="clearCurrentCollectionButton" class="secondary-button collection-manage-button clear-collection-button" type="button" hidden><span>×</span> Xóa</button><label class="sort-select"><span>Sắp xếp:</span><select id="sortSelect"><option value="recent">Mới thêm</option><option value="title">Tên bài hát</option><option value="artist">Nghệ sĩ</option></select></label></div></div>
         <div id="stats" class="stats-line"></div>
         <div id="trackList" class="track-list" aria-live="polite"></div>
         <div id="emptyState" class="empty-state" hidden><div class="empty-icon">♫</div><h3>Chưa có bài hát phù hợp</h3><p>Thử đổi từ khóa hoặc tải lên một thư mục nhạc.</p></div>
@@ -84,6 +84,11 @@
     </aside>
   </div>
 
+  <div id="reorderBar" class="reorder-bar" role="region" aria-label="Sắp xếp vị trí bài hát" hidden>
+    <span id="reorderHint" class="reorder-hint">Kéo thả hoặc dùng ▲ ▼ để đổi vị trí, xong bấm Lưu.</span>
+    <button id="cancelReorderButton" class="secondary-button" type="button">Hủy</button>
+    <button id="saveReorderButton" class="primary-button" type="button">Lưu thứ tự</button>
+  </div>
   <audio id="audio"></audio>
   <div id="toast" class="toast" role="status"></div>
   <dialog id="accessDialog" class="access-dialog">

@@ -3,7 +3,7 @@
    - Trong service worker (không có `document`) -> chỉ xử lý nút "Lưu bài" trên thông báo.
    Nhờ vậy không cần thêm file sw.js riêng. */
 if (typeof document === 'undefined') {
-  const APP_CACHE = 'nhac-cua-trung-shell-v5'; // đổi số này mỗi khi sửa CSS/HTML để máy đã cài SW lấy bản mới
+  const APP_CACHE = 'nhac-cua-trung-shell-v7'; // đổi số này mỗi khi sửa CSS/HTML để máy đã cài SW lấy bản mới
   const AUDIO_CACHE = 'nhac-cua-trung-audio-v1';
   const APP_ASSETS = ['./', './index.html', './styles.css', './app.js', './logo.png', './manifest.webmanifest'];
   self.addEventListener('install', event => {
@@ -136,8 +136,9 @@ let githubRepo = null;
 let githubBranch = 'main';
 let thirdPat = '';
 function readState() {
-  try { return Object.assign({ hidden: [], favorites: [], recent: [], playlists: [] }, JSON.parse(localStorage.getItem(stateKey) || '{}')); }
-  catch { return { hidden: [], favorites: [], recent: [], playlists: [] }; }
+  // artistOrder: { tênNghệSĩ: [tênFile.mp3, ...] } — thứ tự bài của từng nghệ sĩ; artistOrderPending: nghệ sĩ đã đổi thứ tự ở máy nhưng chưa đẩy lên GitHub xong.
+  try { return Object.assign({ hidden: [], favorites: [], recent: [], playlists: [], artistOrder: {}, artistOrderPending: [] }, JSON.parse(localStorage.getItem(stateKey) || '{}')); }
+  catch { return { hidden: [], favorites: [], recent: [], playlists: [], artistOrder: {}, artistOrderPending: [] }; }
 }
 function saveState() { localStorage.setItem(stateKey, JSON.stringify(state)); }
 /* ============================================================
@@ -178,6 +179,7 @@ async function restorePlaybackState() {
   playbackSource = saved.playbackSource || playbackSource;
   repeatMode = saved.repeatMode || repeatMode;
   shuffle = Boolean(saved.shuffle);
+  updateShuffleIndicator();
   playlistRepeat = saved.playlistRepeat !== false;
   try {
     audio.src = await fileUrl(track);
@@ -957,6 +959,16 @@ async function loadLibrary() {
       const encodedPath = item.path.split('/').map(encodeURIComponent).join('/');
       return normalizeTrack({ title, artist, path: item.path, sha: item.sha, src: `https://raw.githubusercontent.com/${repo.owner}/${repo.name}/${repository.default_branch}/${encodedPath}` });
     });
+    // Thứ tự bài theo từng nghệ sĩ nằm trong artist/order.json. Nghệ sĩ đã đổi thứ tự ở máy mà chưa đẩy lên được (pending) thì giữ bản ở máy.
+    if (tree.tree.some(item => item.type === 'blob' && item.path === 'artist/order.json')) {
+      const remote = await readRemoteArtistOrder();
+      if (remote) {
+        const local = state.artistOrder || {};
+        state.artistOrder = { ...remote.orders };
+        (state.artistOrderPending || []).forEach(name => { if (local[name]) state.artistOrder[name] = local[name]; });
+      }
+    }
+    seedTracks = applyArtistOrder(seedTracks);
     const playlistFiles = tree.tree.filter(item => item.type === 'blob' && /^playlist\/[^/]+\/playlist\.json$/i.test(item.path));
     const remotePlaylists = await Promise.all(playlistFiles.map(async item => {
       const encodedPath = item.path.split('/').map(encodeURIComponent).join('/');
@@ -981,7 +993,7 @@ async function loadLibrary() {
   } catch (error) {
     const cached = readLibraryCache();
     if (cached && Array.isArray(cached.seedTracks) && cached.seedTracks.length) {
-      seedTracks = cached.seedTracks.map(normalizeTrack);
+      seedTracks = applyArtistOrder(cached.seedTracks.map(normalizeTrack));
       githubRepo = cached.githubRepo || githubRepo;
       githubBranch = cached.githubBranch || githubBranch;
       showToast('Không có mạng. Đang dùng danh sách nhạc đã lưu trên máy.');
@@ -1018,11 +1030,13 @@ function getGitHubRepo() {
 }
 
 function getVisibleTracks() {
+  if (reorderMatchesView()) return reorder.ids.map(id => allTracks().find(track => track.id === id)).filter(Boolean);
   let tracks = allTracks();
   if (view.type === 'recent') tracks = state.recent.map(id => tracks.find(track => track.id === id)).filter(Boolean);
   if (view.type === 'favorites') tracks = tracks.filter(track => state.favorites.includes(track.id));
   if (view.type === 'folder') tracks = tracks.filter(track => track.artist === view.value);
-  if (view.type === 'playlist') { const playlist = state.playlists.find(item => item.id === view.value); tracks = playlist ? tracks.filter(track => playlist.trackIds.includes(track.id)) : []; }
+  // Playlist hiển thị đúng thứ tự đã lưu trong playlist.json (trackIds), không theo thứ tự thư viện.
+  if (view.type === 'playlist') { const playlist = state.playlists.find(item => item.id === view.value); tracks = playlist ? playlist.trackIds.map(id => tracks.find(track => track.id === id)).filter(Boolean) : []; }
   const query = els.search.value.trim().toLocaleLowerCase('vi');
   if (query) tracks = tracks.filter(track => `${track.title} ${track.artist}`.toLocaleLowerCase('vi').includes(query));
   const sort = els.sort.value;
@@ -1035,7 +1049,7 @@ function viewName() {
   if (view.type === 'playlist') return state.playlists.find(item => item.id === view.value)?.name || 'Playlist';
   return { all: 'Tất cả bài hát', recent: 'Nghe gần đây', favorites: 'Yêu thích' }[view.type];
 }
-function renderAll() { renderPlaylists(); renderTracks(); renderQueue(); updatePlayer(); const addTracksButton = document.querySelector('#addTracksButton'); if (addTracksButton) addTracksButton.hidden = view.type !== 'playlist'; updatePlaylistRepeatButton(); updateClearCurrentCollectionButton(); }
+function renderAll() { if (reorder && !reorderMatchesView()) { reorder = null; showToast('Đã hủy thay đổi thứ tự chưa lưu.'); } updateReorderUi(); renderPlaylists(); renderTracks(); renderQueue(); updatePlayer(); const addTracksButton = document.querySelector('#addTracksButton'); if (addTracksButton) addTracksButton.hidden = view.type !== 'playlist'; updatePlaylistRepeatButton(); updateClearCurrentCollectionButton(); }
 function updateClearCurrentCollectionButton() {
   const button = document.querySelector('#clearCurrentCollectionButton');
   const renameButton = document.querySelector('#renameCurrentCollectionButton');
@@ -1045,6 +1059,8 @@ function updateClearCurrentCollectionButton() {
   const inCollection = view.type === 'folder' || view.type === 'playlist';
   const label = view.type === 'folder' ? 'nghệ sĩ' : 'playlist';
   renameButton.hidden = !inCollection;
+  const reorderButton = document.querySelector('#reorderButton');
+  if (reorderButton) { reorderButton.hidden = !inCollection; reorderButton.disabled = !canWrite || (view.type === 'playlist' && !playlist) || getVisibleTracks().length < 2; reorderButton.title = `Sắp xếp vị trí bài hát trong ${label} này`; }
   renameButton.disabled = !canWrite || (view.type === 'playlist' ? !playlist : !tracks.length);
   renameButton.title = `Đổi tên ${label} này`;
   renameButton.innerHTML = `<span>✎</span> Đổi tên ${label}`;
@@ -1053,6 +1069,167 @@ function updateClearCurrentCollectionButton() {
   button.title = `Xóa ${label} này`;
   button.innerHTML = `<span>×</span> Xóa ${label}`;
 }
+/* ============================================================
+   Sắp xếp vị trí bài hát trong playlist / nghệ sĩ.
+   Chỉnh xong tất cả rồi bấm "Lưu thứ tự" mới đẩy lên GitHub, đúng 1 lần cho mỗi danh sách
+   (không lưu từng lần di chuyển).
+   - Playlist: lưu trong playlist/<tên>/playlist.json (mảng tracks đã có thứ tự).
+   - Nghệ sĩ: lưu trong artist/order.json dạng { "Tên nghệ sĩ": ["file1.mp3", ...] } (chỉ lưu tên file nên đổi tên nghệ sĩ không mất thứ tự).
+   ============================================================ */
+let reorder = null; // { kind: 'playlist' | 'folder', key, ids: [trackId], original: [trackId] }
+const orderFilePath = 'artist/order.json';
+function trackFileName(track) { return String((track && track.path) || '').split('/').pop(); }
+function reorderMatchesView() { return Boolean(reorder) && reorder.kind === view.type && reorder.key === view.value; }
+// Áp dụng artistOrder lên danh sách bài: sắp lại bài trong từng nghệ sĩ, giữ nguyên thứ tự giữa các nghệ sĩ; bài chưa có trong order.json xếp sau.
+function applyArtistOrder(list) {
+  const orders = state.artistOrder || {};
+  const firstIndex = new Map();
+  list.forEach((track, index) => { if (!firstIndex.has(track.artist)) firstIndex.set(track.artist, index); });
+  const rank = new Map(list.map((track, index) => {
+    const order = orders[track.artist];
+    const position = order ? order.indexOf(trackFileName(track)) : -1;
+    return [track, position >= 0 ? position : order ? order.length + index : index];
+  }));
+  return [...list].sort((a, b) => firstIndex.get(a.artist) - firstIndex.get(b.artist) || rank.get(a) - rank.get(b));
+}
+function baseTracksForReorder() {
+  if (view.type === 'playlist') {
+    const playlist = state.playlists.find(item => item.id === view.value);
+    return playlist ? playlist.trackIds.map(id => allTracks().find(track => track.id === id)).filter(Boolean) : [];
+  }
+  return allTracks().filter(track => track.artist === view.value);
+}
+function startReorder() {
+  if (!canWrite) return showToast('Chế độ chỉ nghe.');
+  if (view.type !== 'playlist' && view.type !== 'folder') return;
+  const ids = baseTracksForReorder().map(track => track.id);
+  if (ids.length < 2) return showToast('Cần ít nhất 2 bài hát để sắp xếp.');
+  reorder = { kind: view.type, key: view.value, ids, original: [...ids] };
+  renderAll();
+}
+function cancelReorder(silent = false) {
+  if (!reorder) return;
+  reorder = null;
+  renderAll();
+  if (!silent) showToast('Đã hủy sắp xếp, thứ tự giữ nguyên.');
+}
+function updateReorderUi() {
+  const active = reorderMatchesView();
+  document.body.classList.toggle('is-reordering', active);
+  const bar = document.querySelector('#reorderBar');
+  if (bar) bar.hidden = !active;
+}
+function reorderRowHtml(track, index, total) {
+  const id = esc(track.id);
+  return `<article class="track-row reorder-row" draggable="true" data-track-id="${id}"><span class="track-index">${String(index + 1).padStart(2, '0')}</span><div class="track-main"><div class="track-art ${colors[index % colors.length]}">≡</div><div class="track-name"><strong>${esc(track.title)}</strong><span>${esc(track.artist)}</span></div></div><span class="track-album">${esc(track.artist)}</span><span class="track-duration">${track.duration ? formatTime(track.duration) : '--:--'}</span><div class="row-actions reorder-actions"><button class="row-button" data-move="top" title="Lên đầu danh sách"${index === 0 ? ' disabled' : ''}>⤒</button><button class="row-button" data-move="up" title="Lên 1 vị trí"${index === 0 ? ' disabled' : ''}>▲</button><button class="row-button" data-move="down" title="Xuống 1 vị trí"${index === total - 1 ? ' disabled' : ''}>▼</button></div></article>`;
+}
+function moveInReorder(id, how) {
+  if (!reorder) return;
+  const from = reorder.ids.indexOf(id);
+  if (from < 0) return;
+  const to = how === 'top' ? 0 : how === 'up' ? from - 1 : how === 'down' ? from + 1 : from;
+  if (to < 0 || to >= reorder.ids.length || to === from) return;
+  const scroll = window.scrollY;
+  reorder.ids.splice(to, 0, reorder.ids.splice(from, 1)[0]);
+  renderTracks();
+  window.scrollTo(0, scroll);
+}
+// Kéo thả (chuột trên máy tính; màn hình cảm ứng dùng ▲ ▼).
+let reorderDragId = null;
+els.trackList.addEventListener('dragstart', event => {
+  const row = event.target.closest('.reorder-row');
+  if (!row || !reorderMatchesView()) return;
+  reorderDragId = row.dataset.trackId;
+  row.classList.add('is-dragging');
+  event.dataTransfer.effectAllowed = 'move';
+  event.dataTransfer.setData('text/plain', reorderDragId);
+});
+els.trackList.addEventListener('dragend', () => { reorderDragId = null; els.trackList.querySelectorAll('.is-dragging, .drag-over').forEach(row => row.classList.remove('is-dragging', 'drag-over')); });
+els.trackList.addEventListener('dragover', event => {
+  const row = event.target.closest('.reorder-row');
+  if (!row || !reorderDragId || !reorderMatchesView()) return;
+  event.preventDefault();
+  els.trackList.querySelectorAll('.drag-over').forEach(item => { if (item !== row) item.classList.remove('drag-over'); });
+  row.classList.add('drag-over');
+});
+els.trackList.addEventListener('drop', event => {
+  const row = event.target.closest('.reorder-row');
+  if (!row || !reorderDragId || !reorderMatchesView()) return;
+  event.preventDefault();
+  const from = reorder.ids.indexOf(reorderDragId);
+  const to = reorder.ids.indexOf(row.dataset.trackId);
+  reorderDragId = null;
+  if (from < 0 || to < 0 || from === to) return renderTracks();
+  reorder.ids.splice(to, 0, reorder.ids.splice(from, 1)[0]);
+  renderTracks();
+});
+function bytesFromBase64(text) { const binary = atob(String(text).replace(/\s/g, '')); return Uint8Array.from(binary, char => char.charCodeAt(0)); }
+function githubContentsEndpoint(path) { return `https://api.github.com/repos/${githubRepo.owner}/${githubRepo.name}/contents/${githubPath(path)}`; }
+// Đọc artist/order.json mới nhất qua Contents API (không qua CDN raw vì nó cache vài phút). Trả null nếu lỗi.
+async function readRemoteArtistOrder() {
+  try {
+    const token = getGitHubToken();
+    const headers = { Accept: 'application/vnd.github+json', ...(token ? { Authorization: `Bearer ${token}` } : {}), 'X-GitHub-Api-Version': '2022-11-28' };
+    const response = await fetch(`${githubContentsEndpoint(orderFilePath)}?ref=${encodeURIComponent(githubBranch)}`, { headers });
+    if (response.status === 404) return { orders: {}, sha: undefined };
+    if (!response.ok) return null;
+    const file = await response.json();
+    const parsed = JSON.parse(new TextDecoder().decode(bytesFromBase64(file.content)));
+    return { orders: parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}, sha: file.sha };
+  } catch { return null; }
+}
+// Đẩy thứ tự của MỌI nghệ sĩ đang chờ (pending) lên GitHub trong 1 lần ghi duy nhất.
+async function syncArtistOrderToGitHub() {
+  const pending = [...(state.artistOrderPending || [])];
+  if (!pending.length) return;
+  if (!githubRepo) throw new Error('Không xác định được repository GitHub.');
+  const token = getGitHubToken();
+  if (!token) throw new Error('Chưa cấu hình quyền GitHub để lưu thứ tự.');
+  const remote = await readRemoteArtistOrder();
+  if (!remote) throw new Error('Không đọc được thứ tự hiện có trên GitHub.');
+  const merged = { ...remote.orders };
+  pending.forEach(name => { if (state.artistOrder[name]) merged[name] = state.artistOrder[name]; });
+  // Dọn thứ tự của nghệ sĩ không còn tồn tại (đã xóa/đổi tên); chỉ dọn khi thư viện đã tải được.
+  if (seedTracks.length) { const existing = new Set(seedTracks.map(track => track.artist)); Object.keys(merged).forEach(name => { if (!existing.has(name) && !pending.includes(name)) delete merged[name]; }); }
+  const body = { message: `Update artist order: ${pending.join(', ')}`, content: base64FromBytes(new TextEncoder().encode(JSON.stringify(merged, null, 2))), branch: githubBranch };
+  if (remote.sha) body.sha = remote.sha;
+  const headers = { Accept: 'application/vnd.github+json', Authorization: `Bearer ${token}`, 'X-GitHub-Api-Version': '2022-11-28', 'Content-Type': 'application/json' };
+  const response = await fetch(githubContentsEndpoint(orderFilePath), { method: 'PUT', headers, body: JSON.stringify(body) });
+  if (!response.ok) throw new Error('GitHub từ chối lưu thứ tự nghệ sĩ.');
+  state.artistOrderPending = (state.artistOrderPending || []).filter(name => !pending.includes(name));
+  saveState();
+}
+async function saveReorder() {
+  if (!reorderMatchesView()) return;
+  const current = reorder;
+  if (current.ids.join('\n') === current.original.join('\n')) { reorder = null; renderAll(); return showToast('Thứ tự không thay đổi.'); }
+  if (current.kind === 'playlist') {
+    const playlist = state.playlists.find(item => item.id === current.key);
+    if (!playlist) { reorder = null; renderAll(); return showToast('Không tìm thấy playlist.'); }
+    // Bài không nằm trong danh sách đang sắp xếp (ví dụ bài đã ẩn) giữ nguyên, xếp sau cùng.
+    playlist.trackIds = [...current.ids, ...playlist.trackIds.filter(id => !current.ids.includes(id))];
+    playlist.synced = false;
+    saveState();
+    reorder = null;
+    renderAll();
+    try { await syncPlaylistToGitHub(playlist); showToast(`Đã lưu thứ tự playlist “${playlist.name}”.`); }
+    catch (error) { showToast(`Đã lưu thứ tự cục bộ: ${error.message}`); }
+    return;
+  }
+  const name = current.key;
+  state.artistOrder = { ...state.artistOrder, [name]: current.ids.map(id => trackFileName(allTracks().find(track => track.id === id))).filter(Boolean) };
+  state.artistOrderPending = [...new Set([...(state.artistOrderPending || []), name])];
+  saveState();
+  seedTracks = applyArtistOrder(seedTracks);
+  saveLibraryCache();
+  reorder = null;
+  renderAll();
+  try { await syncArtistOrderToGitHub(); showToast(`Đã lưu thứ tự bài hát của “${name}”.`); }
+  catch (error) { showToast(`Đã lưu thứ tự cục bộ: ${error.message}`); }
+}
+document.querySelector('#reorderButton').addEventListener('click', startReorder);
+document.querySelector('#saveReorderButton').addEventListener('click', saveReorder);
+document.querySelector('#cancelReorderButton').addEventListener('click', () => cancelReorder());
 function renderPlaylists() {
   const folders = artists().map(artist => `<button class="playlist-item artist-item ${view.type === 'folder' && view.value === artist ? 'active' : ''}" data-folder="${esc(artist)}"><span>▱</span><span class="artist-name">${esc(artist)}</span><span class="artist-actions"><i data-edit-artist="${esc(artist)}" title="Đổi tên nghệ sĩ">✎</i><i data-delete-artist="${esc(artist)}" title="Xóa nghệ sĩ">×</i></span></button>`).join('');
   const custom = state.playlists.map(item => `<button class="playlist-item ${view.type === 'playlist' && view.value === item.id ? 'active' : ''}" data-playlist="${esc(item.id)}"><span>▤</span><span>${esc(item.name)}</span><span class="artist-actions"><i data-edit-playlist="${esc(item.id)}" title="Đổi tên playlist">✎</i><i class="playlist-delete" data-delete-playlist="${esc(item.id)}" title="Xóa playlist">×</i></span></button>`).join('');
@@ -1065,6 +1242,7 @@ function renderTracks() {
   els.pageTitle.textContent = title; els.sectionTitle.textContent = title;
   els.stats.textContent = `${tracks.length} bài hát${view.type === 'all' ? ` · ${artists().length} nghệ sĩ` : ''} · ${durationLabel(tracks)}`;
   els.empty.hidden = tracks.length > 0; els.trackList.innerHTML = tracks.map((track, index) => {
+    if (reorderMatchesView()) return reorderRowHtml(track, index, tracks.length);
     const liked = state.favorites.includes(track.id);
     const playing = currentTrack?.id === track.id;
     return `<article class="track-row${playing ? ' is-playing' : ''}" data-track-id="${esc(track.id)}"><span class="track-index">${playing && !audio.paused ? '♫' : String(index + 1).padStart(2, '0')}</span><div class="track-main"><div class="track-art ${colors[index % colors.length]}">${playing ? '♫' : '♪'}</div><div class="track-name"><strong>${esc(track.title)}</strong><span>${esc(track.artist)}${track.local ? ' · đã tải lên' : ''}</span></div></div><span class="track-album">${esc(track.artist)}</span><span class="track-duration">${track.duration ? formatTime(track.duration) : '--:--'}</span><div class="row-actions"><button class="row-button play-row" data-play="${esc(track.id)}" title="Phát">▶</button><button class="row-button" data-favorite="${esc(track.id)}" title="${liked ? 'Bỏ yêu thích' : 'Yêu thích'}">${liked ? '♥' : '♡'}</button><button class="row-button" data-add-queue="${esc(track.id)}" title="Thêm vào hàng đợi">≡+</button><button class="row-button" data-add="${esc(track.id)}" title="Thêm vào playlist">+</button>${view.type === 'playlist' ? `<button class="row-button remove-from-playlist" data-remove-from-playlist="${esc(track.id)}" title="Xóa khỏi playlist (bài hát vẫn còn trong thư viện)">−</button>` : `<button class="row-button delete-row" data-delete="${esc(track.id)}" title="Xóa hẳn khỏi thư viện">×</button>`}</div></article>`;
@@ -1087,7 +1265,13 @@ async function legacyPlayTrack(track, nextQueue = null) {
     renderAll();
   } catch { showToast('Không thể phát file này. Kiểm tra đường dẫn hoặc định dạng.'); }
 }
-function playCurrentList(forceShuffle = false) { const tracks = getVisibleTracks(); if (!tracks.length) return showToast('Danh sách này chưa có bài hát.'); playbackSource = sourceForView(); const shouldShuffle = forceShuffle || shuffle; const ordered = shouldShuffle ? [...tracks].sort(() => Math.random() - .5) : tracks; playTrack(ordered[0], ordered); }
+// Fisher–Yates: xáo trộn đều, khác với sort(() => Math.random() - .5) bị lệch.
+function shuffledCopy(list) { const copy = [...list]; for (let i = copy.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [copy[i], copy[j]] = [copy[j], copy[i]]; } return copy; }
+// Chỉ nút "Phát ngẫu nhiên" (forceShuffle === true) mới xáo; "Phát tất cả" luôn phát đúng thứ tự danh sách.
+// So sánh === true vì nút "Phát tất cả" truyền thẳng hàm này làm handler click (tham số là event, luôn truthy).
+function playCurrentList(forceShuffle = false) { const tracks = getVisibleTracks(); if (!tracks.length) return showToast('Danh sách này chưa có bài hát.'); playbackSource = sourceForView(); const shouldShuffle = forceShuffle === true; const ordered = shouldShuffle ? shuffledCopy(tracks) : tracks; playTrack(ordered[0], ordered, true, shouldShuffle); }
+// Nút ⤨ trên thanh điều khiển chỉ là đèn báo: đang phát ngẫu nhiên hay theo thứ tự.
+function updateShuffleIndicator() { const indicator = document.querySelector('#shuffleButton'); if (!indicator) return; indicator.classList.toggle('active', shuffle); indicator.title = shuffle ? 'Đang phát ngẫu nhiên' : 'Đang phát theo thứ tự'; indicator.setAttribute('aria-label', shuffle ? 'Phát ngẫu nhiên: bật' : 'Phát ngẫu nhiên: tắt'); }
 function toggleFavorite(id) { if (!canWrite) return showToast('Chế độ chỉ nghe.'); state.favorites = state.favorites.includes(id) ? state.favorites.filter(item => item !== id) : [id, ...state.favorites]; saveState(); renderAll(); }
 async function deleteGitHubFile(track) {
   const token = getGitHubToken();
@@ -1158,6 +1342,7 @@ async function syncPlaylistToGitHub(playlist) {
   saveState();
 }
 async function retryUnsyncedPlaylists() {
+  if ((state.artistOrderPending || []).length) { try { await syncArtistOrderToGitHub(); } catch { /* vẫn giữ ở máy, thử lại sau */ } }
   const pending = state.playlists.filter(item => item.synced === false);
   for (const playlist of pending) {
     try { await syncPlaylistToGitHub(playlist); } catch { /* vẫn giữ ở máy, thử lại lần tải trang sau */ }
@@ -1269,7 +1454,7 @@ function moveQueue(direction) {
 document.querySelectorAll('[data-view]').forEach(button => button.addEventListener('click', () => { view = { type: button.dataset.view, value: '' }; document.querySelectorAll('.nav-item').forEach(item => item.classList.toggle('active', item === button)); renderAll(); }));
 els.artistList.addEventListener('click', event => { const edit = event.target.closest('[data-edit-artist]'); if (edit) return openArtistDialog(edit.dataset.editArtist); const remove = event.target.closest('[data-delete-artist]'); if (remove) return deleteArtist(remove.dataset.deleteArtist); const folder = event.target.closest('[data-folder]'); if (!folder) return; view = { type: 'folder', value: folder.dataset.folder }; document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active')); renderAll(); });
 els.playlistList.addEventListener('click', event => { const edit = event.target.closest('[data-edit-playlist]'); if (edit) return openPlaylistDialog('rename', edit.dataset.editPlaylist); const remove = event.target.closest('[data-delete-playlist]'); if (remove) return deletePlaylist(remove.dataset.deletePlaylist); const playlist = event.target.closest('[data-playlist]'); if (playlist) { view = { type: 'playlist', value: playlist.dataset.playlist }; document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active')); renderAll(); refreshPlaylistFromGitHub(playlist.dataset.playlist); } });
-els.trackList.addEventListener('click', event => { const row = event.target.closest('[data-track-id]'); if (!row) return; const id = row.dataset.trackId; const track = allTracks().find(item => item.id === id); if (event.target.closest('[data-play]')) { playbackSource = sourceForView(); return playTrack(track, getVisibleTracks()); } if (event.target.closest('[data-favorite]')) return toggleFavorite(id); if (event.target.closest('[data-add-queue]')) return addToQueue(id); if (event.target.closest('[data-add]')) return addToPlaylist(id); if (event.target.closest('[data-remove-from-playlist]')) return removeTrackFromPlaylist(id); if (event.target.closest('[data-delete]')) return deleteTrack(id); if (!event.target.closest('button')) { playbackSource = sourceForView(); playTrack(track, getVisibleTracks()); } });
+els.trackList.addEventListener('click', event => { const row = event.target.closest('[data-track-id]'); if (!row) return; const id = row.dataset.trackId; if (reorderMatchesView()) { const move = event.target.closest('[data-move]'); if (move) moveInReorder(id, move.dataset.move); return; } const track = allTracks().find(item => item.id === id); if (event.target.closest('[data-play]')) { playbackSource = sourceForView(); return playTrack(track, getVisibleTracks()); } if (event.target.closest('[data-favorite]')) return toggleFavorite(id); if (event.target.closest('[data-add-queue]')) return addToQueue(id); if (event.target.closest('[data-add]')) return addToPlaylist(id); if (event.target.closest('[data-remove-from-playlist]')) return removeTrackFromPlaylist(id); if (event.target.closest('[data-delete]')) return deleteTrack(id); if (!event.target.closest('button')) { playbackSource = sourceForView(); playTrack(track, getVisibleTracks()); } });
 els.queueList.addEventListener('click', event => { const id = event.target.dataset.queuePlay; if (id) { const track = queue.find(item => item.id === id); if (track) playTrack(track); } });
 document.querySelector('#createPlaylist').addEventListener('click', createPlaylist);
 document.querySelector('#createArtist').addEventListener('click', openCreateArtistDialog);
@@ -1302,7 +1487,6 @@ async function robustPlay() {
 }
 els.play.addEventListener('click', () => { if (!currentTrack) return playCurrentList(); if (audio.paused) return robustPlay(); audio.pause(); updatePlayer(); renderTracks(); });
 document.querySelector('#previousButton').addEventListener('click', () => moveQueue(-1)); document.querySelector('#nextButton').addEventListener('click', () => moveQueue(1));
-document.querySelector('#shuffleButton').addEventListener('click', event => { shuffle = !shuffle; event.currentTarget.classList.toggle('active', shuffle); showToast(shuffle ? 'Đã bật phát ngẫu nhiên.' : 'Đã tắt phát ngẫu nhiên.'); });
 // Tốc độ phát: 1x ở giữa, chậm hơn bên trái, nhanh hơn bên phải. Giữ khớp với PLAYBACK_RATES của app (storage.ts).
 const speedSteps = [0.5, 0.75, 1, 1.25, 1.5, 2];
 const speedKey = 'giai-dieu-speed-v1';
@@ -1770,6 +1954,13 @@ async function renameArtist(oldName, newName) {
   tracks.forEach(track => { track.path = movedPaths.get(track.path); });
   const affectedIds = new Set(tracks.map(track => track.id));
   for (const playlist of state.playlists.filter(item => item.trackIds.some(id => affectedIds.has(id)))) await syncPlaylistToGitHub(playlist);
+  // Chuyển thứ tự bài sang tên nghệ sĩ mới; bản trên GitHub sẽ được ghi (và dọn tên cũ) ở lần đồng bộ ngay sau khi tải lại thư viện.
+  if (state.artistOrder && state.artistOrder[oldName]) {
+    state.artistOrder[newName] = state.artistOrder[oldName];
+    delete state.artistOrder[oldName];
+    state.artistOrderPending = [...new Set([...(state.artistOrderPending || []).filter(name => name !== oldName), newName])];
+    saveState();
+  }
 }
 async function saveArtistName() {
   const dialog = document.querySelector('#artistDialog');
@@ -1875,11 +2066,13 @@ function advanceQueue() {
   }
   stopAtQueueEnd();
 }
-async function playTrack(track, nextQueue = null, advanceOnFailure = true) {
+async function playTrack(track, nextQueue = null, advanceOnFailure = true, isShuffled = false) {
   if (!track) return;
   const request = ++playGeneration;
   if (nextQueue && playbackSource !== 'queue' && (view.type === 'playlist' || view.type === 'folder')) playbackSource = sourceForView();
   try {
+    // Đưa cả một danh sách mới vào hàng đợi thì chế độ ngẫu nhiên theo đúng danh sách đó; phát lại chính hàng đợi hiện tại (lặp vòng) thì giữ nguyên.
+    if (nextQueue && nextQueue !== queue) { shuffle = isShuffled; updateShuffleIndicator(); }
     if (nextQueue) { queue = [...nextQueue]; queueIndex = queue.findIndex(item => item.id === track.id); }
     else if (!queue.some(item => item.id === track.id)) { queue = [track]; queueIndex = 0; }
     currentTrack = track;
@@ -1910,7 +2103,7 @@ async function playTrack(track, nextQueue = null, advanceOnFailure = true) {
     if (request !== playGeneration) return;
     if (lastError) {
       if (lastError.name === 'NotAllowedError') {
-        showToast('TrÃ¬nh duyá»‡t Ä‘ang cháº·n phÃ¡t ná»n. Nháº¥n PhÃ¡t Ä‘á»ƒ tiáº¿p tá»¥c.');
+        showToast('Trình duyệt đang chặn phát nền. Nhấn Phát để tiếp tục.');
         updatePlayer();
         return;
       }
@@ -1922,7 +2115,7 @@ async function playTrack(track, nextQueue = null, advanceOnFailure = true) {
     renderAll();
   } catch {
     if (request !== playGeneration) return;
-    showToast('Bá» qua file lá»—i, chuyá»ƒn sang bÃ i tiáº¿p theo.');
+    showToast('Bỏ qua file lỗi, chuyển sang bài tiếp theo.');
     if (advanceOnFailure) advanceQueue();
   }
 }

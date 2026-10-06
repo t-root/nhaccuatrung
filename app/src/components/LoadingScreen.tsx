@@ -3,9 +3,10 @@
 import React from 'react';
 import { Animated, Easing, StyleSheet, View } from 'react-native';
 import { Text } from '@/ui/Text';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, spacing } from '@/theme';
 
-const STEPS = ['KHỞI TẠO HỆ THỐNG', 'THIẾT LẬP KẾT NỐI', 'ĐỒNG BỘ THƯ VIỆN', 'GIẢI MÃ TÍN HIỆU ÂM THANH'];
+const STEPS = ['KHỞI TẠO HỆ THỐNG', 'THIẾT LẬP KẾT NỐI', 'ĐỒNG BỘ THƯ VIỆN', 'GIẢI MÃ ÂM THANH'];
 const BAR_DURATIONS = [520, 760, 430, 680, 590, 820, 470, 640, 540];
 const BAR_MIN = 6;
 const BAR_MAX = 46;
@@ -31,6 +32,8 @@ function EqualizerBar({ duration, delay }: { duration: number; delay: number }) 
 }
 
 export function LoadingScreen() {
+  // HomeScreen đã chừa insets.top ở trên; chừa thêm đúng bằng đó ở dưới để khối nằm giữa màn hình thật.
+  const insets = useSafeAreaInsets();
   const [step, setStep] = React.useState(0);
   const [trackWidth, setTrackWidth] = React.useState(0);
   const scan = React.useRef(new Animated.Value(0)).current;
@@ -57,7 +60,7 @@ export function LoadingScreen() {
   const translateX = scan.interpolate({ inputRange: [0, 1], outputRange: [-SCAN_WIDTH, trackWidth] });
 
   return (
-    <View style={styles.wrap}>
+    <View style={[styles.wrap, { paddingBottom: insets.top }]}>
       <Text style={styles.eyebrow}>NHẠC CỦA TRUNG</Text>
 
       <View style={styles.equalizer}>
@@ -83,12 +86,13 @@ export function LoadingScreen() {
 
 const styles = StyleSheet.create({
   wrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.xl * 1.5, gap: spacing.lg },
-  eyebrow: { color: colors.textMuted, fontSize: 11, letterSpacing: 4 },
+  // paddingLeft = letterSpacing: chữ giãn cách luôn thừa một khoảng ở cuối, bù lại cho cân giữa.
+  eyebrow: { color: colors.textMuted, fontSize: 11, letterSpacing: 4, paddingLeft: 4 },
   equalizer: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center', gap: 5, height: BAR_MAX },
   bar: { width: 5, backgroundColor: colors.accent },
-  track: { alignSelf: 'stretch', maxWidth: 260, width: '100%', height: 2, backgroundColor: colors.border, overflow: 'hidden' },
+  track: { alignSelf: 'center', maxWidth: 260, width: '100%', height: 2, backgroundColor: colors.border, overflow: 'hidden' },
   scan: { width: SCAN_WIDTH, height: 2, backgroundColor: colors.accent },
-  statusRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, height: 18 },
+  statusRow: { alignSelf: 'center', maxWidth: 260, width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs, height: 18 },
   prompt: { color: colors.accent, fontSize: 12 },
-  status: { color: colors.accent, fontSize: 12, letterSpacing: 2 },
+  status: { color: colors.accent, fontSize: 12, letterSpacing: 2, flexShrink: 1 },
 });

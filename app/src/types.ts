@@ -36,4 +36,11 @@ export type PersistedState = {
   favorites: string[];
   recent: string[];
   playlists: Playlist[];
+  // Thứ tự bài của từng nghệ sĩ: { tênNghệSĩ: [tênFile.mp3, ...] } (khớp artist/order.json trên GitHub).
+  artistOrder?: Record<string, string[]>;
+  // Nghệ sĩ đã đổi thứ tự ở máy nhưng chưa đẩy lên GitHub xong.
+  artistOrderPending?: string[];
 };
+
+// Đang sắp xếp vị trí bài hát trong 1 playlist/nghệ sĩ; chưa lưu thì chỉ nằm ở máy.
+export type ReorderState = { kind: 'playlist' | 'folder'; key: string; ids: string[]; original: string[] };

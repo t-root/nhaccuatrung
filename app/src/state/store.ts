@@ -26,6 +26,7 @@ import type {
   Playlist,
   PlaybackSource,
   RepeatMode,
+  ReorderState,
   RepoInfo,
   SortMode,
   Track,
@@ -36,6 +37,37 @@ function sourceForView(view: View): PlaybackSource {
   if (view.type === 'playlist') return 'playlist';
   if (view.type === 'folder') return 'artist';
   return 'collection';
+}
+// Fisher–Yates: xáo trộn đều, khác với sort(() => Math.random() - 0.5) bị lệch.
+function shuffledCopy<T>(list: T[]): T[] {
+  const copy = [...list];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+function trackFileName(track: Track | undefined) {
+  return String(track?.path ?? '').split('/').pop() ?? '';
+}
+// Áp dụng thứ tự đã lưu lên danh sách bài: sắp lại bài trong từng nghệ sĩ, giữ nguyên thứ tự giữa các nghệ sĩ;
+// bài chưa có trong order.json (mới tải lên) xếp sau.
+function applyArtistOrder(list: Track[], orders: Record<string, string[]>): Track[] {
+  const firstIndex = new Map<string, number>();
+  list.forEach((t, i) => {
+    if (!firstIndex.has(t.artist)) firstIndex.set(t.artist, i);
+  });
+  const rank = new Map<Track, number>(
+    list.map((t, i) => {
+      const order = orders[t.artist];
+      const pos = order ? order.indexOf(trackFileName(t)) : -1;
+      return [t, pos >= 0 ? pos : order ? order.length + i : i];
+    })
+  );
+  return [...list].sort((a, b) => firstIndex.get(a.artist)! - firstIndex.get(b.artist)! || rank.get(a)! - rank.get(b)!);
+}
+function reorderMatches(reorder: ReorderState | null, view: View) {
+  return Boolean(reorder) && reorder!.kind === view.type && reorder!.key === view.value;
 }
 function repeatsBySource(source: PlaybackSource) {
   return source === 'playlist' || source === 'artist';
@@ -58,6 +90,8 @@ type Store = {
   client: GitHubClient | null;
   tracks: Track[];
   persisted: PersistedState;
+  // Sắp xếp vị trí bài hát (chưa lưu thì chỉ nằm ở máy): null = không ở chế độ sắp xếp.
+  reorder: ReorderState | null;
 
   // ----- điều hướng / danh sách hiển thị -----
   view: View;
@@ -96,16 +130,20 @@ type Store = {
   artists: () => string[];
 
   // ----- actions: phát nhạc -----
-  playTrack: (track: Track, nextQueue?: Track[] | null) => Promise<void>;
+  playTrack: (track: Track, nextQueue?: Track[] | null, isShuffled?: boolean) => Promise<void>;
   playCurrentList: (forceShuffle?: boolean) => Promise<void>;
   togglePlayPause: () => Promise<void>;
   moveQueue: (direction: 1 | -1) => Promise<void>;
   seekTo: (seconds: number) => Promise<void>;
   addToQueue: (id: string) => void;
   playQueue: () => Promise<void>;
-  toggleShuffle: () => void;
   cycleRepeatMode: () => void;
   cyclePlaybackRate: () => void;
+  startReorder: () => void;
+  moveInReorder: (id: string, how: 'up' | 'down' | 'top') => void;
+  cancelReorder: (silent?: boolean) => void;
+  saveReorder: () => Promise<void>;
+  syncArtistOrder: () => Promise<void>;
   togglePlaylistRepeat: () => void;
   cycleQueueRepeat: () => void;
 
@@ -146,6 +184,7 @@ export const useStore = create<Store>((set, get) => ({
   client: null,
   tracks: [],
   persisted: { ...defaultState },
+  reorder: null,
 
   view: { type: 'all', value: '' },
   search: '',
@@ -240,8 +279,19 @@ export const useStore = create<Store>((set, get) => ({
     set({ loadStatus: 'loading', loadError: null });
     const client = new GitHubClient(repo, token);
     try {
-      const { tracks, playlists: remotePlaylists } = await client.loadLibrary();
+      const { tracks: rawTracks, playlists: remotePlaylists, artistOrders } = await client.loadLibrary();
       const persisted = { ...get().persisted };
+
+      // Thứ tự bài của nghệ sĩ: lấy bản trên GitHub, trừ nghệ sĩ đang chờ đồng bộ (đã sửa ở máy) thì giữ bản ở máy.
+      if (artistOrders) {
+        const local = persisted.artistOrder ?? {};
+        const merged = { ...artistOrders };
+        (persisted.artistOrderPending ?? []).forEach((name) => {
+          if (local[name]) merged[name] = local[name];
+        });
+        persisted.artistOrder = merged;
+      }
+      const tracks = applyArtistOrder(rawTracks, persisted.artistOrder ?? {});
 
       const remoteNames = new Set(remotePlaylists.map((p) => p.name.toLocaleLowerCase()));
       // Chỉ bỏ khỏi máy những playlist đã từng đồng bộ mà giờ không còn trên GitHub;
@@ -267,7 +317,8 @@ export const useStore = create<Store>((set, get) => ({
       await savePersistedState(persisted);
       await saveLibraryCache(repo, tracks);
 
-      // thử đẩy lại các playlist chưa đồng bộ (ví dụ vừa mất mạng lúc sửa)
+      // thử đẩy lại thứ tự nghệ sĩ / các playlist chưa đồng bộ (ví dụ vừa mất mạng lúc sửa)
+      if ((persisted.artistOrderPending ?? []).length) get().syncArtistOrder().catch(() => {});
       for (const p of persisted.playlists.filter((p) => p.synced === false)) {
         client.syncPlaylist(p, tracks).then(() => {
           p.synced = true;
@@ -286,7 +337,7 @@ export const useStore = create<Store>((set, get) => ({
     } catch (error: any) {
       const cached = await readLibraryCache();
       if (cached && cached.repo.owner === repo.owner && cached.repo.name === repo.name && cached.tracks.length) {
-        set({ tracks: cached.tracks, loadStatus: 'ready', loadError: null });
+        set({ tracks: applyArtistOrder(cached.tracks, get().persisted.artistOrder ?? {}), loadStatus: 'ready', loadError: null });
         get().showToast('Không có mạng. Đang dùng danh sách nhạc đã lưu trên máy.');
         probeDurations(cached.tracks, (id, duration) => {
           set((s) => ({ tracks: s.tracks.map((t) => (t.id === id ? { ...t, duration } : t)) }));
@@ -302,21 +353,30 @@ export const useStore = create<Store>((set, get) => ({
     }
   },
 
-  setView: (view) => set({ view, search: '' }),
+  setView: (view) => {
+    const had = get().reorder;
+    if (had && had.kind === view.type && had.key === view.value) return; // bấm lại đúng danh sách đang sắp xếp
+    set({ view, search: '', reorder: null });
+    if (had) get().showToast('Đã hủy thay đổi thứ tự chưa lưu.');
+  },
   setSearch: (text) => set({ search: text }),
   setSort: (sort) => set({ sort }),
 
   artists: () => [...new Set(get().tracks.map((t) => t.artist))],
 
   visibleTracks: () => {
-    const { tracks, persisted, view, search, sort } = get();
+    const { tracks, persisted, view, search, sort, reorder } = get();
+    if (reorderMatches(reorder, view)) {
+      return reorder!.ids.map((id) => tracks.find((t) => t.id === id)).filter(Boolean) as Track[];
+    }
     let list = tracks.filter((t) => !persisted.hidden.includes(t.id));
     if (view.type === 'recent') list = persisted.recent.map((id) => list.find((t) => t.id === id)).filter(Boolean) as Track[];
     if (view.type === 'favorites') list = list.filter((t) => persisted.favorites.includes(t.id));
     if (view.type === 'folder') list = list.filter((t) => t.artist === view.value);
     if (view.type === 'playlist') {
       const playlist = persisted.playlists.find((p) => p.id === view.value);
-      list = playlist ? list.filter((t) => playlist.trackIds.includes(t.id)) : [];
+      // Hiển thị đúng thứ tự đã lưu trong playlist.json (trackIds), không theo thứ tự thư viện.
+      list = playlist ? (playlist.trackIds.map((id) => list.find((t) => t.id === id)).filter(Boolean) as Track[]) : [];
     }
     const q = search.trim().toLocaleLowerCase();
     if (q) list = list.filter((t) => `${t.title} ${t.artist}`.toLocaleLowerCase().includes(q));
@@ -327,7 +387,7 @@ export const useStore = create<Store>((set, get) => ({
 
   // ---------------- phát nhạc ----------------
 
-  playTrack: async (track, nextQueue) => {
+  playTrack: async (track, nextQueue, isShuffled = false) => {
     const state = get();
     const view = state.view;
     let playbackSource = state.playbackSource;
@@ -345,7 +405,10 @@ export const useStore = create<Store>((set, get) => ({
       queueIndex = 0;
     }
 
-    set({ currentTrack: track, queue, queueIndex, playbackSource });
+    // Đưa cả một danh sách mới vào hàng đợi thì chế độ ngẫu nhiên theo đúng danh sách đó; phát lại chính
+    // hàng đợi hiện tại (playQueue, lặp vòng) thì giữ nguyên.
+    const shuffle = nextQueue && nextQueue !== state.queue ? isShuffled : state.shuffle;
+    set({ currentTrack: track, queue, queueIndex, playbackSource, shuffle });
 
     try {
       const uri = await resolvePlayableUri(track);
@@ -376,13 +439,13 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   playCurrentList: async (forceShuffle = false) => {
-    const { visibleTracks, shuffle, view } = get();
+    const { visibleTracks, view } = get();
     const tracks = visibleTracks();
     if (!tracks.length) return get().showToast('Danh sách này chưa có bài hát.');
     set({ playbackSource: sourceForView(view) });
-    const shouldShuffle = forceShuffle || shuffle;
-    const ordered = shouldShuffle ? [...tracks].sort(() => Math.random() - 0.5) : tracks;
-    await get().playTrack(ordered[0], ordered);
+    // Chỉ nút "Phát ngẫu nhiên" (forceShuffle = true) mới xáo; "Phát tất cả" luôn phát đúng thứ tự danh sách.
+    const ordered = forceShuffle ? shuffledCopy(tracks) : tracks;
+    await get().playTrack(ordered[0], ordered, forceShuffle);
   },
 
   togglePlayPause: async () => {
@@ -434,16 +497,110 @@ export const useStore = create<Store>((set, get) => ({
     await playTrack(queue[0], queue);
   },
 
-  toggleShuffle: () => {
-    const shuffle = !get().shuffle;
-    set({ shuffle });
-    get().showToast(shuffle ? 'Đã bật phát ngẫu nhiên.' : 'Đã tắt phát ngẫu nhiên.');
-  },
-
   cycleRepeatMode: () => {
     const repeatMode: RepeatMode = get().repeatMode === 'off' ? 'one' : 'off';
     set({ repeatMode });
     get().showToast(repeatMode === 'one' ? 'Bài hát đang lặp vô hạn.' : 'Đã tắt lặp bài hát.');
+  },
+
+  // ---------------- sắp xếp vị trí bài hát ----------------
+  // Chỉnh xong tất cả rồi bấm "Lưu thứ tự" mới đẩy lên GitHub, đúng 1 lần cho mỗi danh sách (không lưu từng lần di chuyển).
+
+  startReorder: () => {
+    const { canWrite, view, tracks, persisted, showToast } = get();
+    if (!canWrite) return showToast('Chế độ chỉ nghe.');
+    if (view.type !== 'playlist' && view.type !== 'folder') return;
+    const visible = tracks.filter((t) => !persisted.hidden.includes(t.id));
+    let ids: string[];
+    if (view.type === 'playlist') {
+      const playlist = persisted.playlists.find((p) => p.id === view.value);
+      ids = playlist ? (playlist.trackIds.map((id) => visible.find((t) => t.id === id)?.id).filter(Boolean) as string[]) : [];
+    } else {
+      ids = visible.filter((t) => t.artist === view.value).map((t) => t.id);
+    }
+    if (ids.length < 2) return showToast('Cần ít nhất 2 bài hát để sắp xếp.');
+    set({ reorder: { kind: view.type, key: view.value, ids, original: [...ids] }, search: '' });
+  },
+
+  moveInReorder: (id, how) => {
+    const { reorder } = get();
+    if (!reorder) return;
+    const from = reorder.ids.indexOf(id);
+    if (from < 0) return;
+    const to = how === 'top' ? 0 : how === 'up' ? from - 1 : from + 1;
+    if (to < 0 || to >= reorder.ids.length || to === from) return;
+    const ids = [...reorder.ids];
+    ids.splice(to, 0, ids.splice(from, 1)[0]);
+    set({ reorder: { ...reorder, ids } });
+  },
+
+  cancelReorder: (silent = false) => {
+    if (!get().reorder) return;
+    set({ reorder: null });
+    if (!silent) get().showToast('Đã hủy sắp xếp, thứ tự giữ nguyên.');
+  },
+
+  saveReorder: async () => {
+    const { reorder, view, persisted, tracks, client, showToast } = get();
+    if (!reorder || !reorderMatches(reorder, view)) return;
+    if (reorder.ids.join('\n') === reorder.original.join('\n')) {
+      set({ reorder: null });
+      return showToast('Thứ tự không thay đổi.');
+    }
+
+    if (reorder.kind === 'playlist') {
+      const playlist = persisted.playlists.find((p) => p.id === reorder.key);
+      if (!playlist) {
+        set({ reorder: null });
+        return showToast('Không tìm thấy playlist.');
+      }
+      // Bài không nằm trong danh sách đang sắp xếp (ví dụ bài đã ẩn) giữ nguyên, xếp sau cùng.
+      playlist.trackIds = [...reorder.ids, ...playlist.trackIds.filter((id) => !reorder.ids.includes(id))];
+      playlist.synced = false;
+      const next = { ...persisted };
+      set({ persisted: next, reorder: null });
+      await savePersistedState(next);
+      try {
+        await client?.syncPlaylist(playlist, tracks);
+        playlist.synced = true;
+        await savePersistedState(get().persisted);
+        showToast(`Đã lưu thứ tự playlist "${playlist.name}".`);
+      } catch (error: any) {
+        showToast(`Đã lưu thứ tự cục bộ: ${error.message}`);
+      }
+      return;
+    }
+
+    const name = reorder.key;
+    const order = reorder.ids.map((id) => trackFileName(tracks.find((t) => t.id === id))).filter(Boolean);
+    const next: PersistedState = {
+      ...persisted,
+      artistOrder: { ...(persisted.artistOrder ?? {}), [name]: order },
+      artistOrderPending: [...new Set([...(persisted.artistOrderPending ?? []), name])],
+    };
+    const ordered = applyArtistOrder(tracks, next.artistOrder ?? {});
+    set({ persisted: next, tracks: ordered, reorder: null });
+    await savePersistedState(next);
+    if (client && get().repo) await saveLibraryCache(get().repo!, ordered);
+    try {
+      await get().syncArtistOrder();
+      showToast(`Đã lưu thứ tự bài hát của "${name}".`);
+    } catch (error: any) {
+      showToast(`Đã lưu thứ tự cục bộ: ${error.message}`);
+    }
+  },
+
+  // Đẩy thứ tự của MỌI nghệ sĩ đang chờ lên GitHub trong 1 lần ghi duy nhất.
+  syncArtistOrder: async () => {
+    const { client, persisted, tracks } = get();
+    const pending = persisted.artistOrderPending ?? [];
+    if (!pending.length) return;
+    if (!client) throw new Error('Chưa cấu hình repository.');
+    await client.syncArtistOrder(pending, persisted.artistOrder ?? {}, [...new Set(tracks.map((t) => t.artist))]);
+    const current = get().persisted;
+    const next = { ...current, artistOrderPending: (current.artistOrderPending ?? []).filter((n) => !pending.includes(n)) };
+    set({ persisted: next });
+    await savePersistedState(next);
   },
 
   cyclePlaybackRate: () => {
@@ -654,6 +811,19 @@ export const useStore = create<Store>((set, get) => ({
     if (!client) return;
     try {
       await client.renameArtist(oldName, newName, tracks);
+      // Chuyển thứ tự bài sang tên mới; bản trên GitHub được ghi (và dọn tên cũ) ở lần đồng bộ ngay sau khi tải lại thư viện.
+      const p = get().persisted;
+      if (p.artistOrder?.[oldName]) {
+        const artistOrder = { ...p.artistOrder, [newName]: p.artistOrder[oldName] };
+        delete artistOrder[oldName];
+        const next = {
+          ...p,
+          artistOrder,
+          artistOrderPending: [...new Set([...(p.artistOrderPending ?? []).filter((n) => n !== oldName), newName])],
+        };
+        set({ persisted: next });
+        await savePersistedState(next);
+      }
       if (view.type === 'folder' && view.value === oldName) set({ view: { type: 'folder', value: newName } });
       await loadLibrary();
       showToast(`Đã đổi tên nghệ sĩ thành "${newName}".`);

@@ -79,6 +79,11 @@ export function HomeScreen() {
   const canWrite = useStore((s) => s.canWrite);
   const renameArtist = useStore((s) => s.renameArtist);
   const deleteArtist = useStore((s) => s.deleteArtist);
+  const reorder = useStore((s) => s.reorder);
+  const startReorder = useStore((s) => s.startReorder);
+  const moveInReorder = useStore((s) => s.moveInReorder);
+  const cancelReorder = useStore((s) => s.cancelReorder);
+  const saveReorder = useStore((s) => s.saveReorder);
   const createPlaylist = useStore((s) => s.createPlaylist);
   const createPlaylistFromArtists = useStore((s) => s.createPlaylistFromArtists);
   const deletePlaylist = useStore((s) => s.deletePlaylist);
@@ -125,6 +130,7 @@ export function HomeScreen() {
   // Tương đương updatePlaylistRepeatButton()/updateClearCurrentCollectionButton() trong app.js:
   // 2 nút này chỉ xuất hiện khi đang xem 1 nghệ sĩ (folder) hoặc 1 playlist cụ thể.
   const inCollection = view.type === 'folder' || view.type === 'playlist';
+  const reorderActive = Boolean(reorder) && reorder!.kind === view.type && reorder!.key === view.value;
   const collectionLabel = view.type === 'folder' ? 'nghệ sĩ' : 'playlist';
   const collectionDisabled = !canWrite || (view.type === 'playlist' ? !playlistObj : tracks.length === 0);
   const [confirmState, setConfirmState] = React.useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
@@ -304,6 +310,9 @@ export function HomeScreen() {
         <Text style={styles.stats}>{stats}</Text>
       </View>
 
+      {reorderActive ? (
+        <Text style={styles.reorderHint}>Dùng ⤒ ▲ ▼ để đổi vị trí bài hát, xong bấm "Lưu thứ tự" ở dưới.</Text>
+      ) : (
       <View style={styles.actionsRow}>
         <Pressable style={styles.primaryButton} onPress={() => playCurrentList(false)}>
           <Text style={styles.primaryButtonText}>▶ Phát tất cả</Text>
@@ -334,6 +343,11 @@ export function HomeScreen() {
             <Text style={styles.secondaryButtonText}>+ Thêm bài hát</Text>
           </Pressable>
         )}
+        {inCollection && canWrite && tracks.length > 1 && (
+          <Pressable style={styles.secondaryButton} onPress={startReorder}>
+            <Text style={styles.secondaryButtonText}>⇅ Sắp xếp</Text>
+          </Pressable>
+        )}
         {inCollection && canWrite && (
           <Pressable style={styles.secondaryButton} onPress={openRenameCollection}>
             <Text style={styles.secondaryButtonText}>✎ Đổi tên</Text>
@@ -349,6 +363,7 @@ export function HomeScreen() {
           </Pressable>
         )}
       </View>
+      )}
     </View>
   );
 
@@ -362,7 +377,7 @@ export function HomeScreen() {
         <FlatList
           data={rows}
           keyExtractor={(row) => (row.kind === 'track' ? row.track.id : row.kind)}
-          contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.xl }}
+          contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: reorderActive ? spacing.xl * 4 : spacing.xl }}
           ListHeaderComponent={header}
           // Có ListHeaderComponent thì chỉ số item dữ liệu bị lệch +1: item 0 (PlayerBar) = 1.
           stickyHeaderIndices={[1]}
@@ -392,10 +407,22 @@ export function HomeScreen() {
                 onQueue={() => addToQueue(track.id)}
                 onAddToPlaylist={() => setPlaylistDialogFor(track.id)}
                 onRemove={() => (view.type === 'playlist' ? removeFromPlaylist(view.value, track.id) : deleteTrack(track.id))}
+                reorder={reorderActive ? { first: index === 0, last: index === tracks.length - 1, onMove: (how) => moveInReorder(track.id, how) } : undefined}
               />
             );
           }}
         />
+      )}
+
+      {reorderActive && (
+        <View style={[styles.reorderBar, { paddingBottom: spacing.md + insets.bottom }]}>
+          <Pressable style={styles.reorderCancel} onPress={() => cancelReorder()}>
+            <Text style={styles.secondaryButtonText}>Hủy</Text>
+          </Pressable>
+          <Pressable style={styles.reorderSave} onPress={saveReorder}>
+            <Text style={styles.primaryButtonText}>Lưu thứ tự</Text>
+          </Pressable>
+        </View>
       )}
 
       {playlistDialogFor && <AddToPlaylistSheet trackId={playlistDialogFor} onClose={() => setPlaylistDialogFor(null)} />}
@@ -623,6 +650,23 @@ const styles = StyleSheet.create({
   secondaryButtonActive: { borderColor: colors.accent },
   secondaryButtonTextActive: { color: colors.accent, fontWeight: '700' },
   secondaryButtonDisabled: { opacity: 0.35 },
+  reorderHint: { color: colors.textMuted, fontSize: 12, lineHeight: 18, marginBottom: spacing.md },
+  // Thanh Lưu/Hủy cố định ở đáy màn hình để luôn bấm được dù danh sách dài.
+  reorderBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    backgroundColor: colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: colors.accent,
+  },
+  reorderCancel: { flex: 1, alignItems: 'center', paddingVertical: spacing.md, borderWidth: 1, borderColor: colors.border },
+  reorderSave: { flex: 2, alignItems: 'center', paddingVertical: spacing.md, borderWidth: 1, borderColor: colors.accent, backgroundColor: colors.accentDim },
 });
 
 const sheetStyles = StyleSheet.create({

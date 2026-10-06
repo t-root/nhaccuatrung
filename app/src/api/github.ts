@@ -45,7 +45,11 @@ export class GitHubClient {
 
   // Tương đương loadLibrary(): đọc cây file (git trees API), lọc file nhạc
   // trong artist/<tên>/..., và đọc playlist/<tên>/playlist.json
-  async loadLibrary(): Promise<{ tracks: Track[]; playlists: Array<{ name: string; tracks: string[] }> }> {
+  async loadLibrary(): Promise<{
+    tracks: Track[];
+    playlists: Array<{ name: string; tracks: string[] }>;
+    artistOrders: Record<string, string[]> | null;
+  }> {
     const headers = authHeaders(this.token);
     const repoRes = await fetch(`https://api.github.com/repos/${this.repo.owner}/${this.repo.name}`, { headers });
     if (!repoRes.ok) {
@@ -98,7 +102,60 @@ export class GitHubClient {
       })
     );
 
-    return { tracks, playlists: remotePlaylists.filter(Boolean) as Array<{ name: string; tracks: string[] }> };
+    // Thứ tự bài theo từng nghệ sĩ nằm trong artist/order.json (không có file / đọc lỗi thì null).
+    let artistOrders: Record<string, string[]> | null = null;
+    if ((tree.tree as any[]).some((item) => item.type === 'blob' && item.path === 'artist/order.json')) {
+      artistOrders = (await this.readArtistOrderFile())?.orders ?? null;
+    }
+
+    return { tracks, playlists: remotePlaylists.filter(Boolean) as Array<{ name: string; tracks: string[] }>, artistOrders };
+  }
+
+  // Đọc artist/order.json mới nhất qua Contents API (không qua CDN raw vì nó cache vài phút). Trả null nếu lỗi.
+  async readArtistOrderFile(): Promise<{ orders: Record<string, string[]>; sha?: string } | null> {
+    try {
+      const res = await fetch(
+        `${this.contentsEndpoint('artist/order.json')}?ref=${encodeURIComponent(this.branch)}&t=${Date.now()}`,
+        { headers: authHeaders(this.token), cache: 'no-store' as RequestCache }
+      );
+      if (res.status === 404) return { orders: {} };
+      if (!res.ok) return null;
+      const file = await res.json();
+      const parsed = JSON.parse(decodeURIComponent(escape(globalThis.atob(String(file.content).replace(/\s/g, '')))));
+      return { orders: parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}, sha: file.sha };
+    } catch {
+      return null;
+    }
+  }
+
+  // Đẩy thứ tự của MỌI nghệ sĩ đang chờ lên GitHub trong 1 lần ghi duy nhất (đọc bản mới nhất, gộp, ghi lại).
+  async syncArtistOrder(pending: string[], localOrders: Record<string, string[]>, existingArtists: string[]) {
+    const token = this.requireToken();
+    const remote = await this.readArtistOrderFile();
+    if (!remote) throw new Error('Không đọc được thứ tự hiện có trên GitHub.');
+    const merged: Record<string, string[]> = { ...remote.orders };
+    pending.forEach((name) => {
+      if (localOrders[name]) merged[name] = localOrders[name];
+    });
+    // Dọn thứ tự của nghệ sĩ không còn tồn tại (đã xóa/đổi tên); chỉ dọn khi thư viện đã tải được.
+    if (existingArtists.length) {
+      const existing = new Set(existingArtists);
+      Object.keys(merged).forEach((name) => {
+        if (!existing.has(name) && !pending.includes(name)) delete merged[name];
+      });
+    }
+    const body: Record<string, unknown> = {
+      message: `Update artist order: ${pending.join(', ')}`,
+      content: globalThis.btoa(unescape(encodeURIComponent(JSON.stringify(merged, null, 2)))),
+      branch: this.branch,
+    };
+    if (remote.sha) body.sha = remote.sha;
+    const res = await fetch(this.contentsEndpoint('artist/order.json'), {
+      method: 'PUT',
+      headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error('GitHub từ chối lưu thứ tự nghệ sĩ.');
   }
 
   // Đọc thẳng playlist.json mới nhất (dùng Contents API để né cache CDN của raw.githubusercontent.com)

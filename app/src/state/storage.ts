@@ -40,7 +40,7 @@ export async function savePlaybackRate(rate: number) {
   }
 }
 
-export const defaultState: PersistedState = { hidden: [], favorites: [], recent: [], playlists: [] };
+export const defaultState: PersistedState = { hidden: [], favorites: [], recent: [], playlists: [], artistOrder: {}, artistOrderPending: [] };
 
 export async function readPersistedState(): Promise<PersistedState> {
   try {

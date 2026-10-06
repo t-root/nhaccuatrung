@@ -20,7 +20,6 @@ export function PlayerBar() {
   const moveQueue = useStore((s) => s.moveQueue);
   const seekTo = useStore((s) => s.seekTo);
   const shuffle = useStore((s) => s.shuffle);
-  const toggleShuffle = useStore((s) => s.toggleShuffle);
   const repeatMode = useStore((s) => s.repeatMode);
   const cycleRepeatMode = useStore((s) => s.cycleRepeatMode);
   const playbackRate = useStore((s) => s.playbackRate);
@@ -47,9 +46,10 @@ export function PlayerBar() {
 
       <View style={styles.center}>
         <View style={styles.controls}>
-          <Pressable hitSlop={8} onPress={toggleShuffle}>
+          {/* Chỉ là đèn báo (không bấm được): sáng khi đang phát ngẫu nhiên. Muốn phát ngẫu nhiên thì bấm "Ngẫu nhiên" ở danh sách. */}
+          <View accessibilityRole="image" accessibilityLabel={shuffle ? 'Đang phát ngẫu nhiên' : 'Đang phát theo thứ tự'}>
             <Text style={[styles.control, shuffle && styles.controlActive]}>⤨</Text>
-          </Pressable>
+          </View>
           <Pressable hitSlop={8} onPress={() => moveQueue(-1)}>
             <Text style={styles.control}>|◀</Text>
           </Pressable>

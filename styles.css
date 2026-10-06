@@ -992,3 +992,19 @@ body.is-browser-fullscreen .visualizer-shell { top: 0; right: 0; bottom: 0; left
 .playlist-source-switch .secondary-button { flex: 1; }
 .playlist-source-switch .secondary-button.active { color: var(--coral); border-color: var(--coral); font-weight: 700; }
 .playlist-artist-preview { margin: 12px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+
+/* Nút ⤨ trên thanh điều khiển chỉ là đèn báo (không bấm được): sáng khi đang phát ngẫu nhiên. */
+.shuffle-indicator { display: inline-flex; align-items: center; justify-content: center; cursor: default; pointer-events: none; user-select: none; }
+
+/* Chế độ sắp xếp vị trí bài hát: thanh Lưu/Hủy cố định ở đáy màn hình để luôn bấm được dù danh sách dài. */
+.reorder-bar { position: fixed; z-index: 30; right: 0; bottom: 0; left: 0; display: flex; align-items: center; gap: 10px; padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid rgba(var(--accent-rgb), .45); background: rgba(8, 11, 14, .96); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 -10px 28px rgba(0, 0, 0, .4); }
+.reorder-bar[hidden] { display: none; }
+.reorder-hint { flex: 1; min-width: 0; color: var(--muted); font-size: 11px; line-height: 1.4; }
+body.is-reordering .section-toolbar .collection-actions { display: none !important; }
+body.is-reordering .main-content { padding-bottom: 96px; }
+.reorder-row { cursor: grab; }
+.reorder-row.is-dragging { opacity: .45; }
+.reorder-row.drag-over { border-top-color: var(--coral); box-shadow: inset 0 3px 0 var(--coral); }
+.reorder-row .row-button:disabled { opacity: .25; pointer-events: none; }
+.reorder-row .row-button { font-size: 14px; }
+@media (max-width: 640px) { .reorder-hint { display: none; } .reorder-bar .secondary-button, .reorder-bar .primary-button { flex: 1; } }

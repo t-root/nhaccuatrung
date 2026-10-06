@@ -10,6 +10,7 @@ on:
       - 'Thanh Hưng/**'
       - 'Đạt G/**'
       - 'playlist/**'
+      - 'artist/**'
       - '**/*.mp3'
       - '**/*.wav'
       - '**/*.m4a'
