@@ -1,0 +1,11 @@
+artist
+playlist
+*.mp3
+*.wav
+*.m4a
+*.ogg
+*.flac
+*.aac
+*.apk
+app/node_modules
+app/.expo

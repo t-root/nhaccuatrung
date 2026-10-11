@@ -1,0 +1,52 @@
+{
+  "name": "nhac-cua-trung-rn",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "build:android": "eas build -p android --profile preview"
+  },
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "1.23.1",
+    "@react-native-community/slider": "4.5.5",
+    "@react-navigation/native": "^6.1.17",
+    "@react-navigation/native-stack": "^6.9.26",
+    "base-64": "^1.0.0",
+    "expo": "~52.0.0",
+    "expo-asset": "~11.0.5",
+    "expo-av": "~15.0.2",
+    "expo-document-picker": "~13.0.3",
+    "expo-file-system": "~18.0.12",
+    "expo-font": "~13.0.4",
+    "expo-secure-store": "~14.0.1",
+    "expo-splash-screen": "~0.29.24",
+    "expo-status-bar": "~2.0.1",
+    "react": "18.3.1",
+    "react-native": "0.76.9",
+    "react-native-safe-area-context": "4.12.0",
+    "react-native-screens": "~4.4.0",
+    "react-native-track-player": "^4.1.2",
+    "zustand": "^4.5.2"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.24.0",
+    "@types/base-64": "^1.0.2",
+    "@types/react": "~18.3.12",
+    "babel-plugin-module-resolver": "^5.0.2",
+    "typescript": "~5.3.3"
+  },
+  "private": true,
+  "expo": {
+    "doctor": {
+      "reactNativeDirectoryCheck": {
+        "listUnknownPackages": false,
+        "exclude": [
+          "expo-av",
+          "react-native-track-player"
+        ]
+      }
+    }
+  }
+}
