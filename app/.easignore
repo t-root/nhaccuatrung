@@ -1,7 +1,0 @@
-node_modules
-.expo
-.git
-android
-ios
-*.apk
-*.log

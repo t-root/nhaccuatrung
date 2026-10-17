@@ -1,0 +1,8 @@
+{
+  "appId": "com.trung.nhaccuatrung",
+  "appName": "Nhạc Của Trung",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": true
+  }
+}

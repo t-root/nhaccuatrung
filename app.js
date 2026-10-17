@@ -6,6 +6,23 @@ if (typeof document === 'undefined') {
   const APP_CACHE = 'nhac-cua-trung-shell-v9'; // đổi số này mỗi khi sửa CSS/HTML để máy đã cài SW lấy bản mới
   const AUDIO_CACHE = 'nhac-cua-trung-audio-v1';
   const APP_ASSETS = ['./', './index.html', './styles.css', './app.js', './logo.png', './manifest.webmanifest'];
+  // Chạy trong APK (origin localhost) thì SW không cần: asset đã nằm sẵn trong app, còn SW cache-first
+  // sẽ giữ bản app.js/index.html cũ. Máy nào lỡ có SW cũ thì tự hủy: xóa cache, gỡ đăng ký, nạp lại trang.
+  // Các listener này đăng ký trước và stopImmediatePropagation để phần SW của bản web bên dưới không chạy.
+  if (self.location.hostname === 'localhost') {
+    self.addEventListener('install', event => { event.stopImmediatePropagation(); event.waitUntil(self.skipWaiting()); });
+    self.addEventListener('activate', event => {
+      event.stopImmediatePropagation();
+      event.waitUntil((async () => {
+        const keys = await caches.keys();
+        await Promise.all(keys.map(key => caches.delete(key)));
+        await self.registration.unregister();
+        const clients = await self.clients.matchAll({ type: 'window' });
+        clients.forEach(client => client.navigate(client.url).catch(() => {}));
+      })());
+    });
+    self.addEventListener('fetch', event => event.stopImmediatePropagation());
+  }
   self.addEventListener('install', event => {
     event.waitUntil(
       caches.open(APP_CACHE)
@@ -134,6 +151,13 @@ let audioDbPromise = null;
 const playRetryDelays = [0, 700, 1800];
 let githubRepo = null;
 let githubBranch = 'main';
+let libraryFromCache = false;   // true khi danh sách đang hiển thị là bản đã lưu (do chưa có mạng)
+// fetch có giới hạn thời gian: mạng yếu/treo thì bỏ sớm để rơi về danh sách đã lưu thay vì chờ mãi.
+function fetchWithTimeout(url, options = {}, ms = 10000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
 let thirdPat = '';
 function readState() {
   // artistOrder: { tênNghệSĩ: [tênFile.mp3, ...] } — thứ tự bài của từng nghệ sĩ; artistOrderPending: nghệ sĩ đã đổi thứ tự ở máy nhưng chưa đẩy lên GitHub xong.
@@ -330,7 +354,31 @@ async function saveThemeColor(color) {
 let swReg = null;
 let lastNotifKey = '';
 
+// Khi chạy trong APK (Capacitor) thì dùng plugin media-session native để phát nền +
+// hiện điều khiển ở màn hình khóa/thông báo. Trên web, window.Capacitor không tồn tại
+// nên nativeMedia = null và mọi thứ chạy y như cũ bằng Media Session API của trình duyệt.
+let nativeMedia = null;
+try {
+  const cap = window.Capacitor;
+  if (cap && typeof cap.isNativePlatform === 'function' && cap.isNativePlatform()) {
+    if (typeof cap.registerPlugin === 'function') nativeMedia = cap.registerPlugin('MediaSession');
+    else if (cap.Plugins && cap.Plugins.MediaSession) nativeMedia = cap.Plugins.MediaSession;
+  }
+} catch (e) {
+  nativeMedia = null;
+}
+
 function setupMediaSession() {
+  if (nativeMedia) {
+    const safeSet = (action, handler) => { try { const r = nativeMedia.setActionHandler({ action }, handler); if (r && r.catch) r.catch(() => {}); } catch (e) { /* bỏ qua, không để hỏng app */ } };
+    safeSet('play', () => robustPlay());
+    safeSet('pause', () => audio.pause());
+    safeSet('previoustrack', () => moveQueue(-1));
+    safeSet('nexttrack', () => moveQueue(1));
+    safeSet('seekto', details => { if (Number.isFinite(details?.seekTime)) audio.currentTime = details.seekTime; });
+    safeSet('stop', () => { audio.pause(); audio.currentTime = 0; });
+    return;
+  }
   if (!('mediaSession' in navigator)) return;
   const set = (name, handler) => { try { navigator.mediaSession.setActionHandler(name, handler); } catch { /* trình duyệt không hỗ trợ */ } };
   set('play', () => robustPlay());
@@ -342,8 +390,19 @@ function setupMediaSession() {
 }
 
 function updatePositionState() {
-  if (!('mediaSession' in navigator) || !navigator.mediaSession.setPositionState) return;
   if (!Number.isFinite(audio.duration) || audio.duration <= 0) return;
+  if (nativeMedia) {
+    try {
+      const r = nativeMedia.setPositionState({
+        duration: audio.duration,
+        position: Math.min(audio.currentTime, audio.duration),
+        playbackRate: audio.playbackRate || 1
+      });
+      if (r && r.catch) r.catch(() => {});
+    } catch (e) { /* bỏ qua */ }
+    return;
+  }
+  if (!('mediaSession' in navigator) || !navigator.mediaSession.setPositionState) return;
   try {
     navigator.mediaSession.setPositionState({
       duration: audio.duration,
@@ -355,7 +414,50 @@ function updatePositionState() {
 
 const LOGO_URL = new URL('logo.png', document.baseURI).href;   // logo.png nằm cùng thư mục với index.html
 
+// Ảnh bìa cho thông báo/màn hình khóa trong APK: vẽ logo ra canvas 256x256 rồi lấy data URI (chỉ tạo một lần).
+let nativeArtworkPromise = null;
+function getNativeArtwork() {
+  if (!nativeArtworkPromise) {
+    nativeArtworkPromise = new Promise(resolve => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = canvas.height = 256;
+          canvas.getContext('2d').drawImage(img, 0, 0, 256, 256);
+          resolve(canvas.toDataURL('image/png'));
+        } catch { resolve(null); }
+      };
+      img.onerror = () => resolve(null);
+      img.src = LOGO_URL;
+    });
+  }
+  return nativeArtworkPromise;
+}
+
 function syncMediaSession() {
+  if (nativeMedia) {
+    try {
+      if (currentTrack) {
+        const title = String(currentTrack.title || 'Không rõ tên bài');
+        const artist = String(currentTrack.artist || '');
+        // Plugin native không tải được https://localhost/... (chỉ có trong WebView) nên gửi ảnh bìa dạng
+        // data URI; nếu tạo ảnh lỗi thì gửi mảng rỗng, tuyệt đối không đưa URL http để tránh crash.
+        getNativeArtwork().then(art => {
+          try {
+            const r = nativeMedia.setMetadata({
+              title, artist, album: document.title,
+              artwork: art ? [{ src: art, sizes: '256x256', type: 'image/png' }] : []
+            });
+            if (r && r.catch) r.catch(() => {});
+          } catch (e) { /* bỏ qua */ }
+        });
+      }
+      const r2 = nativeMedia.setPlaybackState({ playbackState: !currentTrack ? 'none' : (audio.paused ? 'paused' : 'playing') });
+      if (r2 && r2.catch) r2.catch(() => {});
+    } catch (e) { /* bỏ qua, không để hỏng app */ }
+    return; // native đã có notification riêng -> không chạy legacyShowActionNotification (service worker)
+  }
   if ('mediaSession' in navigator) {
     if (!currentTrack) navigator.mediaSession.metadata = null;
     else {
@@ -402,6 +504,16 @@ async function legacyOriginalShowActionNotification() {
 
 async function setupActionNotification() {
   if (!('serviceWorker' in navigator)) return;
+  // Trong APK không dùng service worker: nó chặn fetch tới GitHub làm treo việc tải nhạc,
+  // còn thông báo media đã do plugin native lo. Gỡ SW + cache đã đăng ký từ trước.
+  if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) {
+    try {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r => r.unregister()));
+      if (window.caches) { const keys = await caches.keys(); await Promise.all(keys.map(k => caches.delete(k))); }
+    } catch { /* bỏ qua */ }
+    return;
+  }
   try {
     swReg = await navigator.serviceWorker.register('app.js');
     navigator.serviceWorker.addEventListener('message', event => {
@@ -890,8 +1002,11 @@ window.addEventListener('resize', resizeVisualizer);
 // F11 (fullscreen trình duyệt, ẩn thanh địa chỉ/tab) không bắn ra sự kiện Fullscreen
 // API nào cả, nên phải đoán qua việc kích thước cửa sổ khớp kích thước màn hình.
 function checkBrowserFullscreen() {
+  // Trong APK, WebView luôn chiếm đúng cả màn hình nên phép đoán theo kích thước sẽ luôn "đúng"
+  // và ẩn hết giao diện (chỉ còn visualizer). Chỉ áp dụng phép đoán này trên trình duyệt.
+  const inNativeApp = Boolean(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
   const isFull = Boolean(document.fullscreenElement) ||
-    (Math.abs(window.innerWidth - screen.width) < 2 && Math.abs(window.innerHeight - screen.height) < 2);
+    (!inNativeApp && Math.abs(window.innerWidth - screen.width) < 2 && Math.abs(window.innerHeight - screen.height) < 2);
   document.body.classList.toggle('is-browser-fullscreen', isFull);
   resizeVisualizer();
 }
@@ -990,7 +1105,7 @@ async function loadLibrary() {
     if (!repo) throw new Error('GitHub Pages URL required');
     githubRepo = repo;
     const apiHeaders = { Accept: 'application/vnd.github+json', Authorization: `Bearer ${getGitHubToken()}` };
-    const repoResponse = await fetch(`https://api.github.com/repos/${repo.owner}/${repo.name}`, { headers: apiHeaders });
+    const repoResponse = await fetchWithTimeout(`https://api.github.com/repos/${repo.owner}/${repo.name}`, { headers: apiHeaders });
     if (!repoResponse.ok) {
       if (repoResponse.status === 403) throw new Error('GitHub API từ chối truy cập hoặc đã hết rate limit.');
       if (repoResponse.status === 404) throw new Error('Không tìm thấy repository GitHub.');
@@ -998,7 +1113,7 @@ async function loadLibrary() {
     }
     const repository = await repoResponse.json();
     githubBranch = repository.default_branch;
-    const treeResponse = await fetch(`https://api.github.com/repos/${repo.owner}/${repo.name}/git/trees/${encodeURIComponent(githubBranch)}?recursive=1`, { headers: apiHeaders });
+    const treeResponse = await fetchWithTimeout(`https://api.github.com/repos/${repo.owner}/${repo.name}/git/trees/${encodeURIComponent(githubBranch)}?recursive=1`, { headers: apiHeaders }, 15000);
     if (!treeResponse.ok) {
       if (treeResponse.status === 403) throw new Error('GitHub API từ chối truy cập hoặc đã hết rate limit.');
       throw new Error('GitHub API unavailable');
@@ -1051,10 +1166,12 @@ async function loadLibrary() {
     });
     saveState();
     saveLibraryCache();
+    libraryFromCache = false;
     retryUnsyncedPlaylists();
   } catch (error) {
     const cached = readLibraryCache();
     if (cached && Array.isArray(cached.seedTracks) && cached.seedTracks.length) {
+      libraryFromCache = true;
       seedTracks = applyArtistOrder(cached.seedTracks.map(normalizeTrack));
       githubRepo = cached.githubRepo || githubRepo;
       githubBranch = cached.githubBranch || githubBranch;
@@ -1086,6 +1203,11 @@ function getGitHubRepo() {
   const host = location.hostname.toLowerCase();
   const pathParts = location.pathname.split('/').filter(Boolean);
   if (queryRepo?.includes('/')) { const [owner, name] = queryRepo.split('/'); return { owner, name }; }
+  // Trong APK (Capacitor) origin là https://localhost -> không suy ra repo từ URL được,
+  // nên trỏ cố định tới repo nhạc trên GitHub để vẫn tải được danh sách bài hát.
+  if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) {
+    return { owner: 't-root', name: 'nhaccuatrung' };
+  }
   if (!host.endsWith('.github.io')) return null;
   const owner = host.replace('.github.io', '');
   return { owner, name: pathParts[0] || `${owner}.github.io` };
@@ -1684,8 +1806,10 @@ document.querySelector('#accessUnlock').addEventListener('click', async event =>
 accessPass.addEventListener('keydown', event => { if (event.key === 'Enter') document.querySelector('#accessUnlock').click(); });
 const hasAdminSession = sessionStorage.getItem('giai-dieu-admin-session') === '1';
 const isInstalledPwa = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
-setWriteAccess(hasAdminSession || isInstalledPwa);
-if (!hasAdminSession && !isInstalledPwa) accessDialog.showModal();
+// Trong APK (Capacitor) coi như bản đã cài -> tự mở quyền, không hỏi mật khẩu.
+const isNativeApp = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+setWriteAccess(hasAdminSession || isInstalledPwa || isNativeApp);
+if (!hasAdminSession && !isInstalledPwa && !isNativeApp) accessDialog.showModal();
 // Collapsible sidebar sections (Artists / Playlists)
 (function setupSectionToggles() {
   const key = 'giai-dieu-section-collapse';
@@ -1712,6 +1836,18 @@ if (!hasAdminSession && !isInstalledPwa) accessDialog.showModal();
   });
 })();
 
+// Mở app: hiện ngay danh sách đã lưu lần trước (nếu có) cho khỏi trống, rồi loadLibrary() bên dưới
+// sẽ tải danh sách mới từ GitHub nếu có mạng; không có mạng thì giữ nguyên danh sách đã lưu.
+(function showSavedLibraryFirst() {
+  const cached = readLibraryCache();
+  if (!cached || !Array.isArray(cached.seedTracks) || !cached.seedTracks.length) return;
+  try {
+    seedTracks = applyArtistOrder(cached.seedTracks.map(normalizeTrack));
+    githubRepo = cached.githubRepo || githubRepo;
+    githubBranch = cached.githubBranch || githubBranch;
+    renderAll();
+  } catch { /* nếu bản lưu hỏng thì bỏ qua, chờ tải từ mạng */ }
+})();
 fetch('./key.txt', { cache: 'no-store' })
   .then(response => response.ok ? response.text() : '')
   .then(value => { thirdPat = value.trim(); })
@@ -1722,6 +1858,8 @@ fetch('./key.txt', { cache: 'no-store' })
 // (synced: false). Ngay khi có mạng trở lại thì tự thử đẩy lên GitHub luôn,
 // không cần đợi người dùng tải lại trang mới đồng bộ.
 window.addEventListener('online', retryUnsyncedPlaylists);
+// Có mạng lại mà đang hiển thị danh sách đã lưu -> tải danh sách mới luôn, không cần mở lại app.
+window.addEventListener('online', () => { if (libraryFromCache) loadLibrary(); });
 
 function openPlaylistDialog(mode, trackId = '') {
   const dialog = document.querySelector('#playlistDialog');

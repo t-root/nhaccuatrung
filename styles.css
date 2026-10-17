@@ -1011,3 +1011,6 @@ body.is-reordering .main-content { padding-bottom: 96px; }
 .reorder-row .row-button:disabled { opacity: .25; pointer-events: none; }
 .reorder-row .row-button { font-size: 14px; }
 @media (max-width: 640px) { .reorder-hint { display: none; } .reorder-bar .secondary-button, .reorder-bar .primary-button { flex: 1; } }
+
+/* Bảng hàng đợi phải nằm trên thanh player (player mobile là sticky z-index 10) nhưng dưới toast (20) và thanh sắp xếp (30). */
+.queue-panel { z-index: 15; }

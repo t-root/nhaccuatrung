@@ -1,1 +1,15 @@
 .claude/
+
+# Capacitor / Node
+node_modules/
+www/
+
+# Android build output (giữ lại project android/ nhưng bỏ phần build)
+android/.gradle/
+android/build/
+android/app/build/
+android/capacitor-cordova-android-plugins/
+android/local.properties
+android/release.keystore
+android/keystore.properties
+android/app/src/main/assets/public/
