@@ -1,0 +1,19 @@
+{
+  "name": "Nhạc Của Trung",
+  "short_name": "Nhạc Của Trung",
+  "lang": "vi",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#080b0e",
+  "theme_color": "#080b0e",
+  "description": "Trình phát nhạc cá nhân của Trung.",
+  "icons": [
+    {
+      "src": "logo.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
