@@ -609,13 +609,30 @@ function setupVisualizer() {
     if (visualizerState) visualizerState.textContent = 'VISUALIZER OFFLINE';
   }
 }
+// Chỉ vẽ khi trang đang hiển thị: app ở nền / tắt màn hình thì dừng hẳn vòng requestAnimationFrame
+// (trước đây vẽ liên tục dù ở nền => nóng máy, tốn pin). Âm thanh không phụ thuộc vòng vẽ này.
+function scheduleVisualizer() {
+  if (visualizerFrame || document.visibilityState !== 'visible') return;
+  visualizerFrame = requestAnimationFrame(drawVisualizer);
+}
+function stopVisualizer() {
+  if (visualizerFrame) { cancelAnimationFrame(visualizerFrame); visualizerFrame = 0; }
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') { vizPrevT = 0; scheduleVisualizer(); } else stopVisualizer();
+});
+let vizLastDrawAt = 0;
 function drawVisualizer() {
+  visualizerFrame = 0;
   if (!visualizerCanvas) return;
   const ctx = visualizerCanvas.getContext('2d');
   const W = visualizerCanvas.clientWidth;
   const H = visualizerCanvas.clientHeight;
-  if (!W || !H) { visualizerFrame = requestAnimationFrame(drawVisualizer); return; }
+  if (!W || !H) { scheduleVisualizer(); return; }
   const t = performance.now() / 1000;
+  // Đang tạm dừng: hạ xuống ~20fps vì chỉ còn hiệu ứng nền, đỡ tốn CPU/GPU
+  if (audio.paused && t - vizLastDrawAt < 0.05) { scheduleVisualizer(); return; }
+  vizLastDrawAt = t;
   const dt = Math.min(0.05, Math.max(0.001, t - (vizPrevT || t - 0.016)));
   vizPrevT = t;
   const TAU = Math.PI * 2;
@@ -995,7 +1012,7 @@ function drawVisualizer() {
   ctx.strokeStyle = accentRgba(0.07);
   ctx.beginPath(); ctx.moveTo(0, H * 0.9); ctx.lineTo(W, H * 0.9); ctx.stroke();
 
-  visualizerFrame = requestAnimationFrame(drawVisualizer);
+  scheduleVisualizer();
 }
 
 window.addEventListener('resize', resizeVisualizer);
@@ -1718,7 +1735,7 @@ audio.addEventListener('timeupdate', () => {
   const now = Date.now();
   if (currentTrack && now - lastPlaybackSaveAt > 5000) { lastPlaybackSaveAt = now; savePlaybackState(); }
 });
-audio.addEventListener('play', () => { setupVisualizer(); audioContext?.resume(); if (visualizerState) visualizerState.textContent = `LIVE / ${currentTrack?.artist || 'AUDIO'}`; updatePlayer(); renderTracks(); }); audio.addEventListener('pause', () => { if (visualizerState) visualizerState.textContent = 'SIGNAL PAUSED'; updatePlayer(); renderTracks(); savePlaybackState(); });
+audio.addEventListener('play', () => { setupVisualizer(); audioContext?.resume(); scheduleVisualizer(); if (visualizerState) visualizerState.textContent = `LIVE / ${currentTrack?.artist || 'AUDIO'}`; updatePlayer(); renderTracks(); }); audio.addEventListener('pause', () => { if (visualizerState) visualizerState.textContent = 'SIGNAL PAUSED'; updatePlayer(); renderTracks(); savePlaybackState(); });
 audio.addEventListener('error', () => {
   if (currentTrack) audioErrorGeneration = playGeneration;
 });

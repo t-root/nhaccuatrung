@@ -78,3 +78,16 @@ nên không cần ảnh splash.
 Muốn đổi logo: thay `logo.png`, tạm tạo `resources/icon.png` (1024x1024, PNG thật) rồi chạy
 `npx capacitor-assets generate --android --iconBackgroundColor '#080b0e'`. Sau đó xóa
 `resources/` và các ảnh `splash*.png` mà lệnh này sinh thêm.
+
+### Giữ nút Play ở thông báo hoạt động sau khi tạm dừng lâu
+
+`capacitor.config.json` đặt `plugins.MediaSession.foregroundService = "always"`:
+foreground service sống suốt thời gian app chạy (không chỉ lúc đang phát), nên
+Android không đóng băng tiến trình/WebView khi người dùng pause rồi qua app khác.
+Nhờ vậy bấm Play ở thanh thông báo vẫn gọi được `robustPlay()` trong JS.
+Đổi lại thông báo media luôn hiện khi app còn chạy.
+
+### Live spectrum
+
+Vòng vẽ `drawVisualizer()` chỉ chạy khi trang `visible` (dừng hẳn khi ẩn/tắt màn
+hình) và hạ còn ~20fps khi đang pause, để máy đỡ nóng.
