@@ -90,4 +90,18 @@ Nhờ vậy bấm Play ở thanh thông báo vẫn gọi được `robustPlay()`
 ### Live spectrum
 
 Vòng vẽ `drawVisualizer()` chỉ chạy khi trang `visible` (dừng hẳn khi ẩn/tắt màn
-hình) và hạ còn ~20fps khi đang pause, để máy đỡ nóng.
+hình), giới hạn 30fps khi phát và 12fps khi pause, canvas có trần DPR 1.5, để
+máy đỡ nóng.
+
+### Chống JS "chết" khi app ở nền
+
+- `MainActivity` gọi `setRendererPriorityPolicy(IMPORTANT, false)` để renderer
+  WebView không bị hạ ưu tiên/giết khi app khác (TikTok...) chiếm RAM, và nạp
+  lại trang nếu renderer vẫn bị giết (`onRenderProcessGone`).
+- `robustPlay()` đặt hạn 4 giây cho `audio.play()`; quá hạn/bị chặn thì tải lại
+  bài hiện tại và giữ nguyên vị trí.
+- Trong APK, âm thanh KHÔNG đi qua Web Audio nữa: thẻ `<audio>` phát thẳng ra loa,
+  `AnalyserNode` chỉ nghe qua `audio.captureStream()` để vẽ phổ (`setupNativeVisualizer`).
+  Lý do: khi app ở nền Chromium có thể treo `AudioContext`, mà nếu tiếng đi qua
+  `createMediaElementSource` thì bấm Play từ thông báo sẽ không ra tiếng. Bản web
+  vẫn dùng `createMediaElementSource` như cũ.

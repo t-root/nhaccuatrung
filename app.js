@@ -584,15 +584,51 @@ async function ensureDurations(tracks) { await Promise.all(tracks.map(loadTrackD
 function resizeVisualizer() {
   if (!visualizerCanvas) return;
   const rect = visualizerCanvas.getBoundingClientRect();
-  const ratio = window.devicePixelRatio || 1;
+  // Trần 1.5: máy 3x DPR vẽ gấp 4 lần số điểm ảnh mà mắt gần như không thấy khác
+  const ratio = Math.min(window.devicePixelRatio || 1, 1.5);
   visualizerCanvas.width = Math.max(1, Math.floor(rect.width * ratio));
   visualizerCanvas.height = Math.max(1, Math.floor(rect.height * ratio));
   visualizerCanvas.getContext('2d').setTransform(ratio, 0, 0, ratio, 0, 0);
 }
 // Mở trang bằng index.html?noviz=1 để TẮT hẳn Web Audio + phổ nhạc (dùng để thử xem tiếng rè có do nó không)
 const VIZ_AUDIO_ENABLED = !new URLSearchParams(location.search).has('noviz');
+// Trong APK: KHÔNG cho âm thanh đi qua Web Audio. Khi app ở nền, Chromium có thể treo AudioContext;
+// nếu tiếng phát đi qua nó (createMediaElementSource) thì bấm Play từ thông báo sẽ không ra tiếng.
+// Thay vào đó thẻ <audio> phát thẳng ra loa, còn analyser chỉ "nghe lén" qua captureStream để vẽ phổ.
+const IN_NATIVE_APP = Boolean(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+let vizStream = null, vizStreamTrack = null, vizStreamSource = null;
+function bindVisualizerStream() {
+  if (!analyser || !audioContext || !vizStream) return;
+  const track = vizStream.getAudioTracks().find(item => item.readyState === 'live');
+  if (!track || track === vizStreamTrack) return;
+  try { vizStreamSource?.disconnect(); } catch { /* bỏ qua */ }
+  try {
+    vizStreamSource = audioContext.createMediaStreamSource(new MediaStream([track]));
+    vizStreamSource.connect(analyser);
+    vizStreamTrack = track;
+  } catch { /* chưa có track hợp lệ, thử lại ở lần 'playing' kế tiếp */ }
+}
+function setupNativeVisualizer() {
+  try {
+    audioContext = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'playback' });
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 512;
+    analyser.smoothingTimeConstant = .84;
+    frequencyData = new Uint8Array(analyser.frequencyBinCount);
+    waveformData = new Uint8Array(analyser.fftSize);
+    vizStream = audio.captureStream();
+    vizStream.addEventListener('addtrack', bindVisualizerStream);
+    ['playing', 'loadedmetadata'].forEach(name => audio.addEventListener(name, bindVisualizerStream));
+    bindVisualizerStream();
+    resizeVisualizer();
+  } catch {
+    analyser = null;
+    if (visualizerState) visualizerState.textContent = 'VISUALIZER OFFLINE';
+  }
+}
 function setupVisualizer() {
   if (!VIZ_AUDIO_ENABLED || !visualizerCanvas || analyser) return;
+  if (IN_NATIVE_APP && typeof audio.captureStream === 'function') { setupNativeVisualizer(); return; }
   try {
     // latencyHint 'playback': bộ đệm âm thanh lớn hơn => ít bị giật/rè khi máy đang bận vẽ hình
     audioContext = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'playback' });
@@ -630,8 +666,8 @@ function drawVisualizer() {
   const H = visualizerCanvas.clientHeight;
   if (!W || !H) { scheduleVisualizer(); return; }
   const t = performance.now() / 1000;
-  // Đang tạm dừng: hạ xuống ~20fps vì chỉ còn hiệu ứng nền, đỡ tốn CPU/GPU
-  if (audio.paused && t - vizLastDrawAt < 0.05) { scheduleVisualizer(); return; }
+  // Giới hạn tốc độ vẽ: 30fps khi phát, 12fps khi tạm dừng — canvas nặng vẽ 60fps là nguyên nhân chính làm máy nóng
+  if (t - vizLastDrawAt < (audio.paused ? 0.08 : 0.03)) { scheduleVisualizer(); return; }
   vizLastDrawAt = t;
   const dt = Math.min(0.05, Math.max(0.001, t - (vizPrevT || t - 0.016)));
   vizPrevT = t;
@@ -1689,11 +1725,17 @@ els.search.addEventListener('input', renderTracks); els.sort.addEventListener('c
 async function robustPlay() {
   if (!currentTrack) return playCurrentList();
   try {
-    await audio.play();
-  } catch (error) {
-    // Sau khi dừng lâu, trình duyệt có thể đã giải phóng tài nguyên audio khiến
-    // play() thất bại dù audio.src vẫn còn; tải lại đúng bài đang phát rồi thử lại.
-    if (error?.name !== 'NotAllowedError') { try { await playTrack(currentTrack, null, false); } catch { /* playTrack đã tự báo lỗi */ } }
+    audioContext?.resume?.().catch(() => {});
+    // Sau khi dừng lâu (nhất là bấm Play từ thông báo khi app đang ở nền), play() có thể treo mãi
+    // không resolve hoặc bị chặn; đặt hạn 4 giây rồi tải lại đúng bài đang phát, giữ nguyên vị trí.
+    await Promise.race([audio.play(), new Promise((_, reject) => setTimeout(() => reject(new Error('play-timeout')), 4000))]);
+    if (audio.paused) throw new Error('still-paused');
+  } catch {
+    const position = audio.currentTime || 0;
+    try {
+      await playTrack(currentTrack, null, false);
+      if (position > 1 && Math.abs(audio.currentTime - position) > 1) audio.currentTime = position;
+    } catch { /* playTrack đã tự báo lỗi */ }
   }
   updatePlayer();
   renderTracks();
