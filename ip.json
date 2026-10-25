@@ -159,5 +159,55 @@
         ]
       }
     }
+  },
+  {
+    "ip": "171.240.134.119",
+    "type": "IPv4",
+    "city": "Ho Chi Minh City",
+    "region": "Ho Chi Minh City",
+    "country": "Viet Nam",
+    "countryCode": "VN",
+    "isp": "Viettel Group",
+    "org": "Viettel Group",
+    "asn": 7552,
+    "ipTimezone": "Asia/Ho_Chi_Minh",
+    "time": "2026-10-25T18:34:03.999Z",
+    "timeVN": "01:34:03 26/10/2026",
+    "device": {
+      "userAgent": "Mozilla/5.0 (Linux; Android 16; 24069RA21C Build/BP2A.250605.031.A3;) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/151.0.7922.199 Mobile Safari/537.36 Zalo android/260802903 ZaloTheme/light ZaloLanguage/vi",
+      "platform": "Linux aarch64",
+      "language": "vi-VN",
+      "languages": [
+        "vi-VN",
+        "en-US"
+      ],
+      "timezone": "Etc/GMT-7",
+      "screen": "407x904",
+      "viewport": "406x814",
+      "pixelRatio": 3,
+      "colorDepth": 24,
+      "touchPoints": 5,
+      "cpuCores": 8,
+      "memoryGB": 8,
+      "network": {
+        "type": "wifi",
+        "effectiveType": "4g",
+        "downlinkMbps": 10,
+        "rttMs": 0,
+        "saveData": false
+      },
+      "darkMode": false,
+      "pwa": false,
+      "cookies": true,
+      "page": "/nhaccuatrung/?zarsrc=30&utm_source=zalo&utm_medium=zalo&utm_campaign=zalo",
+      "hints": {
+        "mobile": true,
+        "os": "Android",
+        "osVersion": "",
+        "arch": "",
+        "bitness": "",
+        "browsers": []
+      }
+    }
   }
 ]
