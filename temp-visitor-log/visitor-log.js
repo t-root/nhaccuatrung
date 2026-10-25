@@ -1,6 +1,7 @@
 /* TẠM THỜI: mỗi lượt truy cập ghi {ip, time, timeVN} vào ip.json trong repo GitHub.
    Làm y như cách app lưu playlist: lấy khóa từ key.txt (token = 'github_pat_' + nội dung key.txt)
-   rồi gọi GitHub Contents API trực tiếp từ trình duyệt. IP lấy từ api.ipify.org.
+   rồi gọi GitHub Contents API trực tiếp từ trình duyệt. IP + vị trí/nhà mạng ước tính lấy từ ipwho.is
+   (dự phòng ipapi.co rồi api.ipify.org). Chỉ ghi các thông tin trình duyệt cho phép đọc mà KHÔNG cần xin quyền.
    GỠ: xóa thư mục temp-visitor-log/, file ip.json và thẻ <script> có đánh dấu TEMP-VISITOR-LOG trong index.html. */
 (function () {
   var REPO = 't-root/nhaccuatrung';
@@ -27,15 +28,82 @@
     return new TextDecoder().decode(bytes);
   }
 
+  // Thông tin vị trí/nhà mạng ước tính từ IP, thử lần lượt từng dịch vụ.
+  async function getIpInfo() {
+    try {
+      var d = await (await fetch('https://ipwho.is/')).json();
+      if (d && d.success !== false && d.ip) {
+        return {
+          ip: d.ip, type: d.type, city: d.city, region: d.region, country: d.country, countryCode: d.country_code,
+          isp: d.connection && d.connection.isp, org: d.connection && d.connection.org,
+          asn: d.connection && d.connection.asn, ipTimezone: d.timezone && d.timezone.id
+        };
+      }
+    } catch (e) {}
+    try {
+      var d2 = await (await fetch('https://ipapi.co/json/')).json();
+      if (d2 && d2.ip && !d2.error) {
+        return {
+          ip: d2.ip, type: d2.version, city: d2.city, region: d2.region, country: d2.country_name, countryCode: d2.country_code,
+          isp: d2.org, org: d2.org, asn: d2.asn, ipTimezone: d2.timezone
+        };
+      }
+    } catch (e) {}
+    return { ip: (await (await fetch('https://api.ipify.org?format=json')).json()).ip };
+  }
+
+  // Thông tin thiết bị/trình duyệt đọc được mà không bật hộp thoại xin quyền.
+  async function getClientInfo() {
+    var nav = navigator, c = nav.connection || nav.mozConnection || nav.webkitConnection || {};
+    var info = {
+      userAgent: nav.userAgent,
+      platform: nav.platform,
+      language: nav.language,
+      languages: (nav.languages || []).slice(0, 5),
+      timezone: (Intl.DateTimeFormat().resolvedOptions() || {}).timeZone,
+      screen: screen.width + 'x' + screen.height,
+      viewport: innerWidth + 'x' + innerHeight,
+      pixelRatio: window.devicePixelRatio,
+      colorDepth: screen.colorDepth,
+      touchPoints: nav.maxTouchPoints,
+      cpuCores: nav.hardwareConcurrency,
+      memoryGB: nav.deviceMemory,
+      network: c.effectiveType ? { type: c.type, effectiveType: c.effectiveType, downlinkMbps: c.downlink, rttMs: c.rtt, saveData: c.saveData } : undefined,
+      darkMode: matchMedia('(prefers-color-scheme: dark)').matches,
+      pwa: matchMedia('(display-mode: standalone)').matches || nav.standalone === true,
+      cookies: nav.cookieEnabled,
+      doNotTrack: nav.doNotTrack,
+      referrer: document.referrer || undefined,
+      page: location.pathname + location.search
+    };
+    // Client Hints (Chromium): hãng/model máy, phiên bản hệ điều hành... không cần xin quyền.
+    try {
+      var uad = nav.userAgentData;
+      if (uad && uad.getHighEntropyValues) {
+        var h = await uad.getHighEntropyValues(['model', 'platformVersion', 'architecture', 'bitness', 'fullVersionList']);
+        info.hints = {
+          mobile: uad.mobile, os: h.platform || uad.platform, osVersion: h.platformVersion, model: h.model || undefined,
+          arch: h.architecture, bitness: h.bitness,
+          browsers: (h.fullVersionList || []).filter(function (b) { return !/not.?a.?brand/i.test(b.brand); })
+            .map(function (b) { return b.brand + ' ' + b.version; })
+        };
+      }
+    } catch (e) {}
+    // Bỏ các trường rỗng cho gọn file.
+    Object.keys(info).forEach(function (k) { if (info[k] === undefined || info[k] === null || info[k] === '') delete info[k]; });
+    return info;
+  }
+
   async function log() {
-    var ip = (await (await fetch('https://api.ipify.org?format=json')).json()).ip;
+    var ipInfo = await getIpInfo();
+    var ip = ipInfo.ip;
     var key = (await (await fetch('./key.txt', { cache: 'no-store' })).text()).trim();
     var now = new Date();
-    var entry = {
-      ip: ip,
-      time: now.toISOString(),
-      timeVN: now.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })
-    };
+    var entry = { ip: ip };
+    Object.keys(ipInfo).forEach(function (k) { if (k !== 'ip' && ipInfo[k]) entry[k] = ipInfo[k]; });
+    entry.time = now.toISOString();
+    entry.timeVN = now.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+    entry.device = await getClientInfo();
     var endpoint = 'https://api.github.com/repos/' + REPO + '/contents/' + FILE;
     var headers = {
       Accept: 'application/vnd.github+json',
