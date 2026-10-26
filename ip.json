@@ -599,5 +599,59 @@
     "ip": "171.236.70.190",
     "time": "2026-10-26T14:39:16.961Z",
     "timeVN": "21:39:16 26/10/2026"
+  },
+  {
+    "ip": "171.240.134.119",
+    "type": "IPv4",
+    "city": "Ho Chi Minh City",
+    "region": "Ho Chi Minh City",
+    "country": "Viet Nam",
+    "countryCode": "VN",
+    "isp": "Viettel Group",
+    "org": "Viettel Group",
+    "asn": 7552,
+    "ipTimezone": "Asia/Ho_Chi_Minh",
+    "time": "2026-10-26T19:31:08.594Z",
+    "timeVN": "02:31:08 27/10/2026",
+    "device": {
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36",
+      "platform": "Win32",
+      "language": "vi-VN",
+      "languages": [
+        "vi-VN",
+        "vi",
+        "en-US",
+        "en"
+      ],
+      "timezone": "Asia/Saigon",
+      "screen": "1280x720",
+      "viewport": "1280x569",
+      "pixelRatio": 1.5,
+      "colorDepth": 24,
+      "touchPoints": 10,
+      "cpuCores": 8,
+      "memoryGB": 16,
+      "network": {
+        "effectiveType": "4g",
+        "downlinkMbps": 10,
+        "rttMs": 50,
+        "saveData": false
+      },
+      "darkMode": true,
+      "pwa": false,
+      "cookies": true,
+      "page": "/nhaccuatrung/",
+      "hints": {
+        "mobile": false,
+        "os": "Windows",
+        "osVersion": "10.0.0",
+        "arch": "x86",
+        "bitness": "64",
+        "browsers": [
+          "Google Chrome 155.0.8059.85",
+          "Chromium 155.0.8059.85"
+        ]
+      }
+    }
   }
 ]
