@@ -437,5 +437,55 @@
         ]
       }
     }
+  },
+  {
+    "ip": "2402:9d80:c43:6e57:ecaa:ff:fef8:1e7",
+    "type": "IPv6",
+    "city": "Ho Chi Minh City",
+    "region": "Ho Chi Minh City",
+    "country": "Viet Nam",
+    "countryCode": "VN",
+    "isp": "MOBIFONE Corporation",
+    "org": "Mobifone Corporation",
+    "asn": 131429,
+    "ipTimezone": "Asia/Ho_Chi_Minh",
+    "time": "2026-10-26T00:59:37.870Z",
+    "timeVN": "07:59:37 26/10/2026",
+    "device": {
+      "userAgent": "Mozilla/5.0 (Linux; Android 15; 24117RK2CG Build/AQ3A.240829.003;) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/155.0.8059.43 Mobile Safari/537.36 Zalo android/261001905 ZaloTheme/light ZaloLanguage/vi",
+      "platform": "Linux aarch64",
+      "language": "vi-VN",
+      "languages": [
+        "vi-VN",
+        "en-US"
+      ],
+      "timezone": "Asia/Saigon",
+      "screen": "385x854",
+      "viewport": "384x752",
+      "pixelRatio": 3.75,
+      "colorDepth": 24,
+      "touchPoints": 5,
+      "cpuCores": 8,
+      "memoryGB": 8,
+      "network": {
+        "type": "cellular",
+        "effectiveType": "4g",
+        "downlinkMbps": 9,
+        "rttMs": 0,
+        "saveData": false
+      },
+      "darkMode": false,
+      "pwa": false,
+      "cookies": true,
+      "page": "/nhaccuatrung/?zarsrc=30&utm_source=zalo&utm_medium=zalo&utm_campaign=zalo",
+      "hints": {
+        "mobile": true,
+        "os": "Android",
+        "osVersion": "",
+        "arch": "",
+        "bitness": "",
+        "browsers": []
+      }
+    }
   }
 ]
