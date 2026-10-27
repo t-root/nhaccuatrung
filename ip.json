@@ -653,5 +653,54 @@
         ]
       }
     }
+  },
+  {
+    "ip": "31.184.195.248",
+    "type": "IPv4",
+    "city": "Saint Petersburg",
+    "region": "Saint Petersburg",
+    "country": "Russian Federation",
+    "countryCode": "RU",
+    "isp": "Petersburg Internet Network Ltd.",
+    "org": "Petersburg Internet Network ltd.",
+    "asn": 34665,
+    "ipTimezone": "Europe/Moscow",
+    "time": "2026-10-27T01:03:16.956Z",
+    "timeVN": "08:03:16 27/10/2026",
+    "device": {
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/104.0.0.0 Safari/537.36",
+      "platform": "Win32",
+      "language": "en-US",
+      "languages": [
+        "en-US",
+        "en"
+      ],
+      "timezone": "UTC",
+      "screen": "800x600",
+      "viewport": "1366x681",
+      "pixelRatio": 1,
+      "colorDepth": 24,
+      "touchPoints": 0,
+      "cpuCores": 32,
+      "memoryGB": 8,
+      "network": {
+        "effectiveType": "4g",
+        "downlinkMbps": 10,
+        "rttMs": 100,
+        "saveData": false
+      },
+      "darkMode": false,
+      "pwa": false,
+      "cookies": true,
+      "page": "/nhaccuatrung/",
+      "hints": {
+        "mobile": false,
+        "os": "",
+        "osVersion": "",
+        "arch": "",
+        "bitness": "",
+        "browsers": []
+      }
+    }
   }
 ]
