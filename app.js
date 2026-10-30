@@ -1667,6 +1667,7 @@ async function collectDirectoryFiles(directoryHandle, parentPath = directoryHand
 let pendingFolderFiles = null;
 async function chooseFolderUpload() {
   if (!canWrite) return showToast('Chế độ chỉ nghe.');
+  if (window.Capacitor?.isNativePlatform?.()) return chooseNativeFolderUpload();
   if (window.isSecureContext && typeof window.showDirectoryPicker === 'function') {
     try {
       const directory = await window.showDirectoryPicker({ mode: 'read' });
@@ -1676,7 +1677,6 @@ async function chooseFolderUpload() {
     }
     return;
   }
-  if (window.Capacitor?.isNativePlatform?.()) return chooseNativeFolderUpload();
   // Trình duyệt không có showDirectoryPicker: dùng input thư mục, nếu không hỗ trợ thì chọn nhiều file rồi đặt tên nghệ sĩ.
   document.querySelector('#folderInput').click();
 }
