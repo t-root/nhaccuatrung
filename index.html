@@ -40,10 +40,11 @@
       </div>
       <div class="sidebar-footer">
         <div class="upload-actions">
-          <label class="upload-button" for="fileInput" title="Tải file nhạc"><span class="upload-icon upload-icon-file">♪</span> Tải file nhạc</label>
-          <button id="folderUploadButton" class="upload-button" type="button" title="Tải thư mục"><span class="upload-icon upload-icon-folder">▣</span> Tải thư mục</button>
+          <button id="fileUploadButton" class="upload-button" type="button" title="Tải file nhạc" aria-label="Tải file nhạc"><svg class="upload-icon upload-icon-file" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2.5h8.5L19 7v14.5H6z"/><path d="M14.5 2.5V7H19"/><path d="M12.5 11v6.2"/><circle cx="10.6" cy="17.2" r="1.9"/><path d="M12.5 11c1.6.2 2.6.9 3 2"/></svg><span class="upload-label">Tải file nhạc</span></button>
+          <button id="folderUploadButton" class="upload-button" type="button" title="Tải thư mục" aria-label="Tải thư mục"><svg class="upload-icon upload-icon-folder" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 6.5v13h19V8.5h-9l-2-2.5h-8z"/><path d="M2.5 10h19"/></svg><span class="upload-label">Tải thư mục</span></button>
         </div>
         <input id="fileInput" type="file" multiple accept="audio/*,.mp3,.wav,.m4a,.ogg,.flac,.aac">
+        <input id="folderInput" type="file" multiple webkitdirectory>
         <input id="artistFileInput" type="file" multiple accept="audio/*,.mp3,.wav,.m4a,.ogg,.flac,.aac">
       </div>
     </aside>
@@ -219,7 +220,7 @@
       </div>
     </div>
   </dialog>
-  <script src="app.js?v=20261011-2"></script>
+  <script src="app.js?v=20261030-1"></script>
   <!-- TEMP-VISITOR-LOG: tạm thời, gỡ theo temp-visitor-log/README.md -->
   <script src="temp-visitor-log/visitor-log.js"></script>
   <script>

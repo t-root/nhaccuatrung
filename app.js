@@ -1664,17 +1664,28 @@ async function collectDirectoryFiles(directoryHandle, parentPath = directoryHand
   }
   return files;
 }
+let pendingFolderFiles = null;
 async function chooseFolderUpload() {
   if (!canWrite) return showToast('Chế độ chỉ nghe.');
-  if (!window.isSecureContext || typeof window.showDirectoryPicker !== 'function') {
-    return showToast('Tải thư mục cần mở website bằng HTTPS trên trình duyệt hỗ trợ.');
+  if (window.isSecureContext && typeof window.showDirectoryPicker === 'function') {
+    try {
+      const directory = await window.showDirectoryPicker({ mode: 'read' });
+      await uploadFiles(await collectDirectoryFiles(directory));
+    } catch (error) {
+      if (error?.name !== 'AbortError') showToast('Không thể đọc thư mục đã chọn.');
+    }
+    return;
   }
-  try {
-    const directory = await window.showDirectoryPicker({ mode: 'read' });
-    await uploadFiles(await collectDirectoryFiles(directory));
-  } catch (error) {
-    if (error?.name !== 'AbortError') showToast('Không thể đọc thư mục đã chọn.');
-  }
+  // WebView của APK không có showDirectoryPicker: dùng input thư mục, nếu không hỗ trợ thì chọn nhiều file rồi đặt tên nghệ sĩ.
+  document.querySelector('#folderInput').click();
+}
+async function handleFolderInput(event) {
+  const files = [...event.target.files];
+  event.target.value = '';
+  if (!files.length) return;
+  if (files.some(file => file.webkitRelativePath)) return uploadFiles(files);
+  pendingFolderFiles = files;
+  openCreateArtistDialog();
 }
 function updatePlayer() { const playerBar = document.querySelector('#playerBar'); const live = Boolean(currentTrack && !audio.paused); els.nowTitle.textContent = currentTrack?.title || 'Chưa chọn bài hát'; els.nowArtist.textContent = currentTrack?.artist || 'Chọn một bài để bắt đầu'; els.play.textContent = live ? 'Ⅱ' : '▶'; els.favorite.classList.toggle('active', Boolean(currentTrack && state.favorites.includes(currentTrack.id))); els.favorite.textContent = currentTrack && state.favorites.includes(currentTrack.id) ? '♥' : '♡'; playerBar?.classList.toggle('is-live', live); playerBar?.style.setProperty('--player-energy', (audio.muted ? 0 : audio.volume).toFixed(3)); updateRepeatButton(); syncMediaSession(); }
 function updateRepeatButton() { const button = document.querySelector('#repeatButton'); const labels = { off: 'Tắt lặp', one: 'Lặp bài vô hạn' }; button.classList.toggle('active', repeatMode !== 'off'); button.title = labels[repeatMode]; button.textContent = repeatMode === 'one' ? '↻∞' : '↻'; }
@@ -1712,6 +1723,8 @@ document.querySelector('#clearCurrentCollectionButton').addEventListener('click'
 document.querySelector('#fileInput').addEventListener('change', event => { uploadFiles(event.target.files); event.target.value = ''; });
 document.querySelector('#artistFileInput').addEventListener('change', event => { const artistName = pendingArtistUpload; pendingArtistUpload = ''; uploadFiles(event.target.files, artistName); event.target.value = ''; });
 document.querySelector('#folderUploadButton').addEventListener('click', chooseFolderUpload);
+document.querySelector('#fileUploadButton').addEventListener('click', () => document.querySelector('#fileInput').click());
+document.querySelector('#folderInput').addEventListener('change', handleFolderInput);
 document.querySelector('#cancelUpload').addEventListener('click', () => { document.querySelector('#uploadDialog').close(); uploadFolderResolve?.(''); uploadFolderResolve = null; });
 document.querySelector('#confirmUpload').addEventListener('click', () => { const value = document.querySelector('#uploadFolderSelect').value; document.querySelector('#uploadDialog').close(); uploadFolderResolve?.(value); uploadFolderResolve = null; });
 document.querySelector('#playAllButton').addEventListener('click', playCurrentList);
@@ -2206,8 +2219,13 @@ function saveCreateArtist() {
   const name = document.querySelector('#createArtistNameInput').value.trim();
   if (!validArtistName(name)) return showToast('Tên nghệ sĩ không hợp lệ.');
   if (artists().some(artist => artist.toLocaleLowerCase() === name.toLocaleLowerCase())) return showToast('Nghệ sĩ đã tồn tại.');
-  pendingArtistUpload = name;
   dialog.close();
+  if (pendingFolderFiles) {
+    const files = pendingFolderFiles;
+    pendingFolderFiles = null;
+    return uploadFiles(files, name);
+  }
+  pendingArtistUpload = name;
   document.querySelector('#artistFileInput').click();
 }
 function openArtistDialog(name) {
@@ -2301,6 +2319,7 @@ document.querySelector('#cancelArtist').addEventListener('click', () => document
 document.querySelector('#saveArtist').addEventListener('click', saveArtistName);
 document.querySelector('#artistNameInput').addEventListener('keydown', event => { if (event.key === 'Enter') saveArtistName(); });
 document.querySelector('#cancelCreateArtist').addEventListener('click', () => document.querySelector('#createArtistDialog').close());
+document.querySelector('#createArtistDialog').addEventListener('close', () => { setTimeout(() => { pendingFolderFiles = null; }, 0); });
 document.querySelector('#saveCreateArtist').addEventListener('click', saveCreateArtist);
 document.querySelector('#createArtistNameInput').addEventListener('keydown', event => { if (event.key === 'Enter') saveCreateArtist(); });
 function waitForPlaybackRetry(delay) { return new Promise(resolve => setTimeout(resolve, delay)); }

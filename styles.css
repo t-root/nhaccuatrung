@@ -52,7 +52,7 @@ button { border: 0; cursor: pointer; }
 .upload-button { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px; color: var(--ink); font-size: 12px; font-weight: 700; border: 1px dashed #c9c7c0; border-radius: 11px; cursor: pointer; }
 .upload-button span { color: var(--coral); font-size: 18px; }
 .upload-button:hover { border-color: var(--coral); background: rgba(255,255,255,.55); }
-#fileInput, #artistFileInput { display: none; }
+#fileInput, #artistFileInput, #folderInput { display: none; }
 .sidebar-footer p { margin: 10px 3px 0; color: #aaa9a2; font-size: 10px; line-height: 1.5; }
 .main-content { min-width: 0; padding: 0 6.2vw 150px; overflow: hidden; }
 .topbar { display: flex; align-items: center; justify-content: space-between; height: 88px; gap: 20px; }
@@ -1014,3 +1014,16 @@ body.is-reordering .main-content { padding-bottom: 96px; }
 
 /* Bảng hàng đợi phải nằm trên thanh player (player mobile là sticky z-index 10) nhưng dưới toast (20) và thanh sắp xếp (30). */
 .queue-panel { z-index: 15; }
+
+/* --- Nút tải file / thư mục: cùng kích thước, biểu tượng SVG rõ ràng, không nền xám, focus đều --- */
+.upload-button { appearance: none; -webkit-appearance: none; background: transparent; font-family: inherit; -webkit-tap-highlight-color: transparent; outline: 0; box-sizing: border-box; }
+.upload-button:focus, .upload-button:active { background: transparent; }
+.upload-button:focus-visible { border-color: var(--coral); box-shadow: 0 0 0 1px var(--coral); }
+.upload-icon { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; border: 0 !important; background: none !important; width: 20px; height: 20px; padding: 0; flex: 0 0 auto; }
+.upload-icon-folder { fill: rgba(var(--accent-rgb), .18); }
+@media (max-width: 640px) {
+  .upload-actions .upload-button { width: 34px; min-width: 34px; height: 34px; padding: 0; border: 1px solid var(--line); justify-content: center; }
+  .upload-actions .upload-button:hover, .upload-actions .upload-button:focus-visible { border-color: var(--coral); }
+  .upload-actions .upload-button .upload-icon { width: 22px; height: 22px; margin: 0; }
+  .upload-actions .upload-label { display: none; }
+}
