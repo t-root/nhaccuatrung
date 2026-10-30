@@ -10,6 +10,7 @@ import com.getcapacitor.WebViewListener;
 public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        registerPlugin(FolderPickerPlugin.class);
         super.onCreate(savedInstanceState);
         if (getBridge() == null) return;
 

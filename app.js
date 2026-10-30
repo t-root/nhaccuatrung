@@ -1676,8 +1676,31 @@ async function chooseFolderUpload() {
     }
     return;
   }
-  // WebView của APK không có showDirectoryPicker: dùng input thư mục, nếu không hỗ trợ thì chọn nhiều file rồi đặt tên nghệ sĩ.
+  if (window.Capacitor?.isNativePlatform?.()) return chooseNativeFolderUpload();
+  // Trình duyệt không có showDirectoryPicker: dùng input thư mục, nếu không hỗ trợ thì chọn nhiều file rồi đặt tên nghệ sĩ.
   document.querySelector('#folderInput').click();
+}
+// APK: plugin native FolderPicker mở bộ chọn thư mục của Android, chép nhạc vào cache rồi trả đường dẫn.
+async function chooseNativeFolderUpload() {
+  const picker = window.Capacitor.registerPlugin('FolderPicker');
+  try {
+    showToast('Chọn thư mục nhạc...');
+    const picked = await picker.pickFolder();
+    if (!picked.files.length) return showToast('Thư mục không có file nhạc hợp lệ.');
+    const files = [];
+    for (const item of picked.files) {
+      const blob = await (await fetch(window.Capacitor.convertFileSrc('file://' + item.path))).blob();
+      const file = new File([blob], item.name, { type: blob.type || 'audio/mpeg' });
+      Object.defineProperty(file, 'webkitRelativePath', { configurable: true, value: item.relativePath });
+      files.push(file);
+    }
+    await uploadFiles(files);
+  } catch (error) {
+    const message = String(error?.message || error);
+    if (message !== 'cancelled') showToast(message || 'Không thể đọc thư mục đã chọn.');
+  } finally {
+    picker.cleanup().catch(() => {});
+  }
 }
 async function handleFolderInput(event) {
   const files = [...event.target.files];
