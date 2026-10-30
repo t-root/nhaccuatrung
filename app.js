@@ -1682,24 +1682,34 @@ async function chooseFolderUpload() {
 }
 // APK: plugin native FolderPicker mở bộ chọn thư mục của Android, chép nhạc vào cache rồi trả đường dẫn.
 async function chooseNativeFolderUpload() {
-  const picker = window.Capacitor.registerPlugin('FolderPicker');
+  let stage = 'khởi tạo plugin';
+  let picker = null;
   try {
-    showToast('Chọn thư mục nhạc...');
+    // Capacitor chạy không bundler: plugin native nằm ở Capacitor.Plugins, không có registerPlugin.
+    picker = window.Capacitor.Plugins?.FolderPicker || window.Capacitor.registerPlugin?.('FolderPicker');
+    if (!picker) throw new Error('APK chưa có plugin chọn thư mục, hãy cài bản mới.');
+    stage = 'mở bộ chọn thư mục';
+    showToast('Đang mở bộ chọn thư mục...');
     const picked = await picker.pickFolder();
+    stage = 'đọc file nhạc';
     if (!picked.files.length) return showToast('Thư mục không có file nhạc hợp lệ.');
+    showToast(`Đang đọc ${picked.files.length} bài từ "${picked.name}"...`);
     const files = [];
     for (const item of picked.files) {
-      const blob = await (await fetch(window.Capacitor.convertFileSrc('file://' + item.path))).blob();
+      const response = await fetch(window.Capacitor.convertFileSrc('file://' + item.path));
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const blob = await response.blob();
       const file = new File([blob], item.name, { type: blob.type || 'audio/mpeg' });
       Object.defineProperty(file, 'webkitRelativePath', { configurable: true, value: item.relativePath });
       files.push(file);
     }
+    stage = 'tải lên GitHub';
     await uploadFiles(files);
   } catch (error) {
     const message = String(error?.message || error);
-    if (message !== 'cancelled') showToast(message || 'Không thể đọc thư mục đã chọn.');
+    if (message !== 'cancelled') showToast(`Lỗi khi ${stage}: ${message}`);
   } finally {
-    picker.cleanup().catch(() => {});
+    picker?.cleanup?.().catch(() => {});
   }
 }
 async function handleFolderInput(event) {
