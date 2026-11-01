@@ -101,7 +101,7 @@ máy đỡ nóng.
 - `robustPlay()` đặt hạn 4 giây cho `audio.play()`; quá hạn/bị chặn thì tải lại
   bài hiện tại và giữ nguyên vị trí.
 - Trong APK, âm thanh KHÔNG đi qua Web Audio nữa: thẻ `<audio>` phát thẳng ra loa,
-  `AnalyserNode` chỉ nghe qua `audio.captureStream()` để vẽ phổ (`setupNativeVisualizer`).
+  phổ được tính riêng: giải mã file ra PCM rồi FFT tại `audio.currentTime` (`nativeAnalyser`), vì `captureStream()` trong WebView hay trả luồng im lặng.
   Lý do: khi app ở nền Chromium có thể treo `AudioContext`, mà nếu tiếng đi qua
   `createMediaElementSource` thì bấm Play từ thông báo sẽ không ra tiếng. Bản web
   vẫn dùng `createMediaElementSource` như cũ.

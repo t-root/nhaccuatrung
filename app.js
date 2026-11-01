@@ -594,41 +594,91 @@ function resizeVisualizer() {
 const VIZ_AUDIO_ENABLED = !new URLSearchParams(location.search).has('noviz');
 // Trong APK: KHÔNG cho âm thanh đi qua Web Audio. Khi app ở nền, Chromium có thể treo AudioContext;
 // nếu tiếng phát đi qua nó (createMediaElementSource) thì bấm Play từ thông báo sẽ không ra tiếng.
-// Thay vào đó thẻ <audio> phát thẳng ra loa, còn analyser chỉ "nghe lén" qua captureStream để vẽ phổ.
+// Thay vào đó thẻ <audio> phát thẳng ra loa, còn phổ được tính riêng từ PCM đã giải mã (xem nativeAnalyser).
 const IN_NATIVE_APP = Boolean(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
-let vizStream = null, vizStreamTrack = null, vizStreamSource = null;
-function bindVisualizerStream() {
-  if (!analyser || !audioContext || !vizStream) return;
-  const track = vizStream.getAudioTracks().find(item => item.readyState === 'live');
-  if (!track || track === vizStreamTrack) return;
-  try { vizStreamSource?.disconnect(); } catch { /* bỏ qua */ }
+// captureStream() trong Android WebView hay trả về luồng im lặng => phổ không nhảy theo nhạc.
+// Thay vào đó: giải mã file nhạc ra PCM (mono 44.1kHz) rồi tự tính FFT tại audio.currentTime.
+// Đối tượng `nativeAnalyser` có cùng giao diện với AnalyserNode nên phần vẽ không phải sửa.
+const VIZ_SR = 44100, VIZ_N = 512;
+let vizPcm = null, vizPcmSrc = '', vizDecoding = '';
+const vizHann = new Float32Array(VIZ_N).map((_, i) => 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (VIZ_N - 1)));
+const vizRe = new Float32Array(VIZ_N), vizIm = new Float32Array(VIZ_N), vizSmooth = new Float32Array(VIZ_N / 2);
+function vizFft(re, im) {
+  const n = re.length;
+  for (let i = 1, j = 0; i < n; i++) {
+    let bit = n >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) { [re[i], re[j]] = [re[j], re[i]]; [im[i], im[j]] = [im[j], im[i]]; }
+  }
+  for (let len = 2; len <= n; len <<= 1) {
+    const ang = -2 * Math.PI / len, wr = Math.cos(ang), wi = Math.sin(ang);
+    for (let i = 0; i < n; i += len) {
+      let cr = 1, ci = 0;
+      for (let k = 0; k < len / 2; k++) {
+        const u = i + k, v = i + k + len / 2;
+        const tr = re[v] * cr - im[v] * ci, ti = re[v] * ci + im[v] * cr;
+        re[v] = re[u] - tr; im[v] = im[u] - ti;
+        re[u] += tr; im[u] += ti;
+        const nr = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = nr;
+      }
+    }
+  }
+}
+function vizFillWindow() {
+  if (!vizPcm || audio.paused) return false;
+  const start = Math.floor(audio.currentTime * VIZ_SR) - VIZ_N;
+  if (start < 0 || start + VIZ_N > vizPcm.length) return false;
+  for (let i = 0; i < VIZ_N; i++) { vizRe[i] = vizPcm[start + i]; vizIm[i] = 0; }
+  return true;
+}
+const nativeAnalyser = {
+  fftSize: VIZ_N,
+  frequencyBinCount: VIZ_N / 2,
+  getByteFrequencyData(out) {
+    const have = vizFillWindow();
+    if (have) {
+      for (let i = 0; i < VIZ_N; i++) vizRe[i] *= vizHann[i];
+      vizFft(vizRe, vizIm);
+    }
+    for (let i = 0; i < out.length; i++) {
+      const mag = have ? Math.hypot(vizRe[i], vizIm[i]) / VIZ_N : 0;
+      vizSmooth[i] = vizSmooth[i] * 0.8 + mag * 0.2;
+      const db = 20 * Math.log10(vizSmooth[i] + 1e-9);
+      out[i] = Math.max(0, Math.min(255, Math.round((db + 100) / 70 * 255)));
+    }
+  },
+  getByteTimeDomainData(out) {
+    const start = vizPcm ? Math.floor(audio.currentTime * VIZ_SR) - out.length : -1;
+    const ok = vizPcm && !audio.paused && start >= 0 && start + out.length <= vizPcm.length;
+    for (let i = 0; i < out.length; i++) out[i] = ok ? Math.max(0, Math.min(255, 128 + vizPcm[start + i] * 127)) : 128;
+  }
+};
+async function decodeForVisualizer() {
+  const src = audio.currentSrc || audio.src;
+  if (!src || src === vizPcmSrc || src === vizDecoding) return;
+  vizDecoding = src;
+  vizPcm = null;
   try {
-    vizStreamSource = audioContext.createMediaStreamSource(new MediaStream([track]));
-    vizStreamSource.connect(analyser);
-    vizStreamTrack = track;
-  } catch { /* chưa có track hợp lệ, thử lại ở lần 'playing' kế tiếp */ }
+    const buf = await (await fetch(src)).arrayBuffer();
+    const decoded = await new OfflineAudioContext(1, 1, VIZ_SR).decodeAudioData(buf);
+    if ((audio.currentSrc || audio.src) !== src) return;   // đã chuyển bài trong lúc giải mã
+    vizPcm = decoded.getChannelData(0);
+    vizPcmSrc = src;
+  } catch { /* không giải mã được: phổ chạy hiệu ứng chờ */ }
+  finally { if (vizDecoding === src) vizDecoding = ''; }
 }
 function setupNativeVisualizer() {
-  try {
-    audioContext = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'playback' });
-    analyser = audioContext.createAnalyser();
-    analyser.fftSize = 512;
-    analyser.smoothingTimeConstant = .84;
-    frequencyData = new Uint8Array(analyser.frequencyBinCount);
-    waveformData = new Uint8Array(analyser.fftSize);
-    vizStream = audio.captureStream();
-    vizStream.addEventListener('addtrack', bindVisualizerStream);
-    ['playing', 'loadedmetadata'].forEach(name => audio.addEventListener(name, bindVisualizerStream));
-    bindVisualizerStream();
-    resizeVisualizer();
-  } catch {
-    analyser = null;
-    if (visualizerState) visualizerState.textContent = 'VISUALIZER OFFLINE';
-  }
+  analyser = nativeAnalyser;
+  frequencyData = new Uint8Array(analyser.frequencyBinCount);
+  waveformData = new Uint8Array(analyser.fftSize);
+  ['loadedmetadata', 'playing'].forEach(name => audio.addEventListener(name, decodeForVisualizer));
+  decodeForVisualizer();
+  resizeVisualizer();
 }
 function setupVisualizer() {
   if (!VIZ_AUDIO_ENABLED || !visualizerCanvas || analyser) return;
-  if (IN_NATIVE_APP && typeof audio.captureStream === 'function') { setupNativeVisualizer(); return; }
+  if (IN_NATIVE_APP) { setupNativeVisualizer(); return; }
   try {
     // latencyHint 'playback': bộ đệm âm thanh lớn hơn => ít bị giật/rè khi máy đang bận vẽ hình
     audioContext = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'playback' });
