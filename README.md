@@ -2,12 +2,12 @@
 
 Web: https://t-root.github.io/nhaccuatrung/
 
-## Tải về (bỏ qua thư mục `artist` và `playlist`)
+## Tải về (bỏ qua nhạc: `artist`, `playlist` và `users` của Dii, Bảo)
 
 ```bash
 git clone --filter=blob:none --no-checkout https://github.com/T-Root/nhaccuatrung.git
 cd nhaccuatrung
 git sparse-checkout init --no-cone
-git sparse-checkout set "/*" "!/artist/" "!/playlist/"
+git sparse-checkout set "/*" "!/artist/" "!/playlist/" "!/users/"
 git checkout main
 ```
