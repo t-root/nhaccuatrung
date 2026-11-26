@@ -1,0 +1,20 @@
+{
+  "id": "/nhaccuatrung/huan/",
+  "name": "Nhạc Của Huấn",
+  "short_name": "Huấn",
+  "lang": "vi",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#080b0e",
+  "theme_color": "#080b0e",
+  "description": "Trình phát nhạc cá nhân của Huấn.",
+  "icons": [
+    {
+      "src": "logo.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

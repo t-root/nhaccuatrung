@@ -1,0 +1,22 @@
+{
+  "name": "nhaccuatrung",
+  "version": "1.0.0",
+  "description": "Nhạc Của Trung - bản web dùng chung làm source để đóng gói APK bằng Capacitor",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:web": "node scripts/build-web.mjs",
+    "sync": "npm run build:web && cap sync android",
+    "apk:debug": "node scripts/build-apk.mjs debug",
+    "apk:release": "node scripts/build-apk.mjs release"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^7.0.0"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/core": "^7.0.0",
+    "@jofr/capacitor-media-session": "^4.0.0"
+  }
+}
